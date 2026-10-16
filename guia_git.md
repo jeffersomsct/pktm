@@ -45,7 +45,7 @@ git commit -m "Primeiro commit: criação do projeto"
 **4. Conecte seu projeto local ao repositório online**
 Vá ao GitHub, crie um repositório vazio e copie a URL. Depois, no terminal:
 ```bash
-git remote add origin https://github.com/seu-usuario/seu-repositorio.git
+git remote add origin https://github.com/jeffersomsct/pktm.git
 ```
 
 **5. Envie os arquivos (Push)**
