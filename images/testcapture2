@@ -1,0 +1,29 @@
+import asyncio
+from winrt.windows.media.capture import MediaCapture
+from winrt.windows.media.capture import MediaCaptureInitializationSettings
+from winrt.windows.storage.streams import InMemoryRandomAccessStream
+
+async def capture_screen():
+    # Inicializa o MediaCapture
+    media_capture = MediaCapture()
+    settings = MediaCaptureInitializationSettings()
+    settings.streaming_capture_mode = 2  # Modo de captura de vídeo
+
+    # Inicializa a configuração do MediaCapture
+    await media_capture.initialize_async(settings)
+
+    # Define o destino de captura (fluxo de memória)
+    stream = InMemoryRandomAccessStream()
+    await media_capture.capture_photo_to_stream_async(None, stream)
+
+    # Recupera os dados da imagem capturada
+    stream.seek(0)
+    buffer = stream.read_async(stream.size).get().detach_as_buffer()
+    data = buffer.read_bytes(len(buffer))
+    return data
+
+# Executa a captura no asyncio
+result = asyncio.run(capture_screen())
+with open("captura.jpg", "wb") as f:
+    f.write(result)
+print("Captura salva como 'captura.jpg'.")

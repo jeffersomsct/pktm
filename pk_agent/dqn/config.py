@@ -1,0 +1,5 @@
+# Poker constants
+SMALL_BLIND = 50
+BIG_BLIND = 100
+STACK_SIZE = 20000
+NUM_STREETS = 4

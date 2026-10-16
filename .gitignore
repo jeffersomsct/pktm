@@ -1,0 +1,27 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local virtual environments
+.venv/
+venv/
+env/
+ENV/
+list/
+pytorch_312/
+winrt/
+
+# Local secrets and environment settings
+.npy
+.pt
+.env
+.env.*
+!.env.example
+
+# Generated debug and training data
+debug_table_recognition.png
+training_data_episode_*.npy

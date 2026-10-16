@@ -1,0 +1,13 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "Python: Attach",
+        "type": "python",
+        "request": "attach",
+        "host": "localhost",  // Host para a conexão (pode ser 'localhost' ou o IP da máquina remota, se for o caso)
+        "port": 5678          // A porta que o debugpy está escutando
+      }
+    ]
+  }
+  
