@@ -207,7 +207,7 @@ if strategy.should_raise():
 
 - **SwC Poker**: `"SwC Poker - Logged in as jeffpk"`
 - **Bodog Poker**: `"Bodog.com - Poker Lobby"`
-- **ACR Poker**: `"Lobby ACR Poker Conectado como jeffersom"`
+- **CoinPoker**: `"CoinPoker"`
 
 ## Notas Importantes
 

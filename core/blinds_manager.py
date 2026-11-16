@@ -1,4 +1,4 @@
-from codemap import Position
+from action.poker_hand_state import Position
 
 class BlindsManager:
     def __init__(self, min_small_blind=1, min_big_blind=2):
@@ -45,48 +45,6 @@ class BlindsManager:
         return players
 
 
-    def id_positions(self, players):    
-        """
-        Identifica as posições:
-
-        UTG = "UTG"       # Under The Gun
-        MP = "MP"         # Middle Position
-        CO = "CO"         # Cutoff
-        HJ = "HJ"         # Hijack (just before the cutoff)
-        LJ = "LJ"         # Lojack (just before hijack)
-        EP = "EP"         # Early Position (can represent UTG+1)
-        OTB = "OTB"       # Out of position (any position when you’re not in the last positions)
-    
-        """
-        for p in players:
-            if p.is_present and p.stack > 0:
-                active_count += 1
-                if p.current_bet > 0:
-                    if bb_player == -1:
-                        bb_player = p
-                    elif sb_player == -1:
-                        sb_player = p
-        dealer_position = players.position
-        ordened_players = players[dealer_position+1:] + players[:dealer_position+1]
-
-    
-        if active_count > 3 and bb_player != -1:
-            bb_idx = ordered_players.index(bb_player)
-            positions = [Position.UTG, Position.MP, Position.CO]
-            pos_idx = 0
-            
-            # Assign positions after BB
-            for player in ordered_players[bb_idx+1:] + ordered_players[:bb_idx]:
-                if player.is_present and player.stack > 0:
-                    if player != sb_player and player != bb_player and pos_idx < len(positions):
-                        for p in players:
-                            if p.position == player.position:
-                                p.pos_preflop = positions[pos_idx]
-                                pos_idx += 1
-                                break
-        
-        return sb_player, bb_player
-    
     def validate_preflop_bets(self, players, bb_amount):
         """
         Valida apostas do pré-flop, identificando apostas iguais ao BB
@@ -112,10 +70,6 @@ class BlindsManager:
             print("current bet: ",player.current_bet, "joined: ", player.just_joined, "Stack:", player.stack, "Position: ", player.position)
                 
         return bb_positions
-    
-    def _next_position(self, current_position):
-        """Calcula próxima posição na mesa"""
-        return (current_position + 1) % 10  # Assumindo mesa de 10 lugares
     
 
     # Inicialização

@@ -8,6 +8,7 @@ from core.debug_image import create_debug_image
 def main():
     # Configuração
     pkr_room_name = "SwC Poker - Logged in as jeffpk"
+   # pkr_room_name = "CoinPoker"
     live = False  # True para captura ao vivo, False para usar imagem de exemplo
     
     # Criar instância da sala

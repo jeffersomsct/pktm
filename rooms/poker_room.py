@@ -1,5 +1,9 @@
 from poker_table_recognizer import TableAnalyzer, TableState, TableInfo, Player
-from config.room_config import get_swc_poker_config_v2, get_acr_poker_config, get_bodog_poker_config
+from config.room_config import (
+    get_CoinPoker_config,
+    get_bodog_poker_config,
+    get_swc_poker_config_v2,
+)
 from config.room_config import RoomConfig
 from typing import List, Optional
 import numpy as np
@@ -9,10 +13,10 @@ class PokerRoom:
     Classe principal para gerenciar uma sala de poker.
     Centraliza todas as informações da mesa e fornece interface para estratégia.
     
-    Nomes de salas suportados:
+    Nomes de salas suportados: Sala de poker reconhecida pelo nome da janela:
         - "SwC Poker - usuário jeffpk": SwC Poker
         - "Bodog.com - Poker Lobby": Bodog Poker
-        - "Lobby ACR Poker Conectado como jeffersom": ACR Poker
+        - "CoinPoker": CoinPoker
     """
     
     def __init__(self, room_name: str):
@@ -35,8 +39,8 @@ class PokerRoom:
             return get_swc_poker_config_v2()
         elif "Bodog" in room_name:
             return get_bodog_poker_config()
-        elif "ACR Poker" in room_name:
-            return get_acr_poker_config()
+        elif "CoinPoker" in room_name:
+            return get_CoinPoker_config()
         else:
             print(f"Aviso: Nome de sala não reconhecido: {room_name}. Usando configuração padrão.")
             return get_swc_poker_config_v2()

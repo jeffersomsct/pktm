@@ -1,10 +1,11 @@
 # room_config.py
 from dataclasses import dataclass
-from typing import Dict, List, Tuple, Optional, Any
+from typing import ClassVar, Dict, List, Tuple, Optional, Any
 from enum import Enum
 
 class DetectionMethod(Enum):
     PIXEL_COLOR = "pixel_color"
+    ARRAY_PIXEL = "array_pixel"
     TEMPLATE_MATCHING = "template_matching"
     OCR = "ocr"
 
@@ -17,18 +18,20 @@ class DealerConfig:
     positions: Dict[int, Tuple[int, int]]  # Position number -> (x, y)
     color_rgb: Optional[Tuple[int, int, int]] = None  # For pixel color
     color_threshold: Optional[int] = None  # For pixel color
+    neighborhood_radius: int = 2
+    min_matching_ratio: float = 0.6
 
 @dataclass
 class ROIConfig:
-    stacks: Dict[str, List[int]]  # name -> [x, y, w, h]
-    bets: Dict[str, List[int]]
-    names: Dict[str, List[int]]
-    pot: Dict[str, List[int]]
-    smallpot: Dict[str, List[int]]
-    money_exists: Dict[bool, List[bool]]
-    hand: Dict[str, List[int]]
-    ranks: Dict[str, List[int]]
-    suits: Dict[str, List[int]]
+    stacks: Dict[str, Tuple[int, int, int, int]]  # name -> (x, y, w, h)
+    bets: Dict[str, Tuple[int, int, int, int]]
+    names: Dict[str, Tuple[int, int, int, int]]
+    pot: Dict[str, Tuple[int, int, int, int]]
+    smallpot: Dict[str, Tuple[int, int, int, int]]
+    money_exists: Dict[bool, Tuple[bool, bool, bool, bool]]
+    hand: Dict[str, Tuple[int, int, int, int]]
+    ranks: Dict[str, Tuple[int, int, int, int]]
+    suits: Dict[str, Tuple[int, int, int, int]]
 
 
 @dataclass
@@ -39,7 +42,7 @@ class PlayerDetectionConfig:
 
 @dataclass
 class RoomConfig:
-    debug_mode = True
+    debug_mode: ClassVar[bool] = True
     room_id: str
     room_name: str
     emptySeatTemplate: str
@@ -79,7 +82,7 @@ def get_swc_poker_config() -> RoomConfig:
             'S': ['S.png', 'Sv2.png','Sv3.png', 'Sv4.png'], 's': ['s_.png'], 'T': ['T.png'],
             't': ['t_.png'], 'U': ['U.png','Uv2.png'], 'u': ['u_.png'], 'v': ['v_.png'],
             'w': ['w_.png', 'w_v2.png'], 'y': ['y_.png','y_v2.png'], 'Z': ['Z.png'],
-            'z': ['Z_.png'], '0': ['0.png'], '2': ['2.png'], '3': ['3.png'], '5': ['5.png'],
+            'z': ['z_.png'], '0': ['0.png'], '2': ['2.png'], '3': ['3.png'], '5': ['5.png'],
             '7': ['7.png'], '9': ['9.png', '9v2.png']
         }
     }
@@ -292,27 +295,30 @@ def get_bodog_poker_config() -> RoomConfig:
     )
 
 
-def get_acr_poker_config() -> RoomConfig:
+def get_CoinPoker_config() -> RoomConfig:
     return RoomConfig(
-        room_id="acr_poker",
-        room_name="ACR Poker",
-        template_path="imgs/models/acr/",
-        sample_image_path="imgs/models/acr/table_example.png",
+        room_id="coinpoker",
+        room_name="CoinPoker",
+        emptySeatTemplate="imgs/models/coinpoker/others/assento_vazio.png",
+        template_path="imgs/models/coinpoker/",
+        sample_image_path="imgs/models/coinpoker/table_example.png",
         dealer_config=DealerConfig(
-            detection_method=DetectionMethod.PIXEL_COLOR,
+            detection_method=DetectionMethod.ARRAY_PIXEL,
             positions={
-                0: (350, 416),
-                1: (663, 387),
-                2: (626, 296),
-                3: (617, 207),
-                4: (506, 154),
-                5: (302, 154),
-                6: (194, 207),
-                7: (179, 301),
-                8: (148, 387),
+                0: (334, 439), # color_rgb=(243, 242, 243), color_rgb=(245, 244, 244)
+                1: (536, 449),
+                2: (648, 344),
+                3: (547, 160),
+                4: (245, 160), # color_rgb=(245, 249, 247)
+                5: (144, 344),
+                6: (256, 449),
+                #7: (179, 301),
+                #8: (148, 387),
             },
-            color_rgb=(224, 216, 195),  # RGB format
-            color_threshold=30
+            color_rgb=(243, 242, 243),  # RGB format
+            color_threshold=30,
+            neighborhood_radius=2,
+            min_matching_ratio=0.60
         ),
         roi_config=ROIConfig(
             stacks={
@@ -356,7 +362,10 @@ def get_acr_poker_config() -> RoomConfig:
             },
             money_exists={
                 True: [True, True, True, True, True, True, True, True, True],
-            }
+            },
+            hand={},
+            ranks={},
+            suits={}
         ),
         player_detection_config=PlayerDetectionConfig(
             detection_method=DetectionMethod.TEMPLATE_MATCHING,

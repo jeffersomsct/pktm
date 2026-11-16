@@ -1,18 +1,8 @@
-# python 3.9
-# pywin32 #Instalar com conda: conda install anaconda::pywin32
-# win32gui #pywin32 instalado no lugar de win32gui
-#pillow==11.1.0 
 pywin32
 pillow
-pyautogui
 numpy
 opencv-python # py 3.7-3.14
 matplotlib
-mss
 requests
 gymnasium # py 3.10-3.14
-d3dshot
-#winrt #  Could not find a version that satisfies the requirement winrt
-#winrt-Windows.Media.Capture # Python >=3.9
-tabulate
 colorama

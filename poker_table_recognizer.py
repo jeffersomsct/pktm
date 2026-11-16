@@ -1,16 +1,14 @@
+# poker_table_recognizer.py
 import numpy as np
 from pathlib import Path
 from enum import Enum
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 from dataclasses import dataclass
 from core.blinds_manager import BlindsManager
-from config.room_config import RoomConfig
-from core.window_handler import search_parent_window
-from images.capture import snapshot
+from config.room_config import DetectionMethod, RoomConfig
+from config.pixel_detector import detect_pixels_in_window
 import cv2
-from codemap import Position
-import os
-from datetime import datetime
+from action.poker_hand_state import Position
 from core.debug_image import create_debug_image
 
 
@@ -55,17 +53,7 @@ class CharacterRecognizer:
         self.templates: Dict[str, List] = {}
         self.target_size = (32, 32)
         self.threshold = 0.8
-        # template_mapping can be dict with keys = category.value (strings) or None
         self.template_mapping = template_mapping
-        self.mapping_version = 'swc'  # fallback if no mapping dict provided
-
-    def _get_template_mapping_Swc_v1(self, category) -> Dict[str, List[str]]:
-        # Fallback vazio: preferir template_mapping vindo da RoomConfig
-        return {}
-
-    def _get_template_mapping_Swc_v2(self, category) -> Dict[str, List[str]]:
-        # Fallback vazio: preferir template_mapping vindo da RoomConfig
-        return {}
 
     def load_templates(self, category):
         print(f"Carregando templates para categoria: {category.value}\n")
@@ -74,15 +62,11 @@ class CharacterRecognizer:
         if not template_dir.exists():
             raise ValueError(f"Diretório de templates não encontrado: {template_dir}")
 
-        # If config supplied a mapping dict, prefer it (keys as category.value)
-        if isinstance(self.template_mapping, dict):
-            template_mapping = self.template_mapping.get(category.value, {})
-        else:
-            # fallback to original mapping choice
-            if self.mapping_version == 'swc_v1':
-                template_mapping = self._get_template_mapping_Swc_v1(category)
-            else:
-                template_mapping = self._get_template_mapping_Swc_v2(category)
+        template_mapping = (
+            self.template_mapping.get(category.value, {})
+            if isinstance(self.template_mapping, dict)
+            else {}
+        )
 
         # Verifica se o template_mapping é um dicionário de strings (caminhos simples)
         if template_mapping and isinstance(next(iter(template_mapping.values())), str):
@@ -121,11 +105,6 @@ class CharacterRecognizer:
         return template
 
     def recognize_text_from_roi(self, roi: np.ndarray) -> str:
-        import matplotlib.pyplot as plt
-
-        #plt.imshow(roi)
-        #plt.axis('off')  # Remove os eixos
-        #plt.show()
         img_gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
         all_matches = []
 
@@ -148,24 +127,6 @@ class CharacterRecognizer:
                     }
 
                     all_matches.append(match_info)
-                    # LOG: salvar a miniatura da região onde a imagem foi encontrada
-                    log_dir = "imgs/log/"
-                    all_matches.append(match_info)
-
-                    # 🔹 Recortar a região do caractere detectado no ROI
-                    x, y = pt
-                    char_crop = roi[y:y+h, x:x+w]  # Recorta a região do caractere
-
-                    # 🔹 Nome do arquivo baseado no caractere e coordenadas
-                    filename = f"{log_dir}{char}_{x}_{y}.png"
-                    # cv2.imwrite(filename, char_crop)  # Salva a imagem
-                    img_with_boxes = roi.copy()  # Cria uma cópia para desenhar as marcações
-                    # 🔹 Desenhar o retângulo na imagem de marcação
-                    #cv2.rectangle(img_with_boxes, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                    #cv2.putText(img_with_boxes, char, (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-                    #cv2.imwrite('imgs/log/img_log.png', img_with_boxes)
-                   # print()
-                    # LOG FIM ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
         all_matches.sort(key=lambda x: x['score'], reverse=True)
         final_characters = []
@@ -260,6 +221,8 @@ class TableRecognizer:
         self.dealer_positions = config.dealer_config.positions
         self.dealer_button_color = config.dealer_config.color_rgb 
         self.color_threshold = config.dealer_config.color_threshold
+        self.dealer_neighborhood_radius = config.dealer_config.neighborhood_radius
+        self.dealer_min_matching_ratio = config.dealer_config.min_matching_ratio
 
         self.blinds_manager = BlindsManager(min_small_blind=1, min_big_blind=2)
         
@@ -269,6 +232,24 @@ class TableRecognizer:
             if np.all(np.abs(pixel_color - self.dealer_button_color) < self.color_threshold):
                 return position
         return -1
+
+    def detect_dealer_array_pixel(self, image: np.ndarray) -> int:
+        if image is None or image.ndim < 3 or self.dealer_button_color is None:
+            return -1
+
+        reference_colors = tuple(reversed(self.dealer_button_color))
+        detections = detect_pixels_in_window(
+            image,
+            self.dealer_positions,
+            reference_colors,
+            threshold=self.color_threshold,
+            window_size=(
+                self.dealer_neighborhood_radius * 2 + 1,
+                self.dealer_neighborhood_radius * 2 + 1,
+            ),
+            min_matching_ratio=self.dealer_min_matching_ratio,
+        )
+        return next((position for position, found in detections.items() if found), -1)
 
     def process_table(self, image: np.ndarray) -> TableState:
         """
@@ -326,7 +307,10 @@ class TableRecognizer:
                         self.char_recognizer.recognize_text_from_roi) or ""
 
         # Detect dealer position
-        dealer_position = self.detect_dealer_position(image)
+        if self.config.dealer_config.detection_method == DetectionMethod.ARRAY_PIXEL:
+            dealer_position = self.detect_dealer_array_pixel(image)
+        else:
+            dealer_position = self.detect_dealer_position(image)
 
         # Identifica Sb e BB in Players
         players = self.blinds_manager.identify_blinds(players, dealer_position)
@@ -343,15 +327,6 @@ class TableRecognizer:
         if self.config.debug_mode:
             create_debug_image(image, self.config, dealer_position, players)
 #config: RoomConfig, players: List[Player], image: np.ndarray, player_positions: dict, template_path: str, threshold: float
-        players = is_player_present(
-            self.config,
-            players, 
-            image, 
-            self.config.player_detection_config.positions,
-            self.config.template_path,
-            self.config.player_detection_config.threshold
-        )
-
         return TableState(
             community_cards=community_cards,
             hand=hand,
@@ -366,10 +341,7 @@ class TableAnalyzer:
     def __init__(self, config: RoomConfig):
         self.table_config = config
         self.blinds_manager = BlindsManager(min_small_blind=1, min_big_blind=2)
-        # passar o mapping dict para o CharacterRecognizer
-        self.char_recognizer = CharacterRecognizer(config.template_path, getattr(config, 'template_mapping', None))
         self.table_recognizer = TableRecognizer(config)
-        self.player_detector = PlayerDetector(config)
         
     def analyze_table(self, snapshot: Optional[np.ndarray] = None) -> TableInfo:
         if snapshot is None:
@@ -406,9 +378,6 @@ class PlayerDetector:
     def detect_players(self, image: np.ndarray) -> List[Player]:
         players = []
         gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        filename = os.path.join('imgs/log', f"gray_image_{timestamp}.png")
-        # cv2.imwrite(filename, gray_image)
         
         for pos, roi in self.player_positions.items():
             x, y, w, h = roi #room_config.py player_detection_config
@@ -431,26 +400,3 @@ class PlayerDetector:
             ))
 
         return players
-
-def is_player_present(config: RoomConfig, players: List[Player], image: np.ndarray, player_positions: dict, template_path: str, threshold: float) -> List[Player]:
-    """
-    Detecta se o player está presente na mesa usando template de assento vazio.
-    """
-    absent_template = cv2.imread(f"{config.template_path}/others/assento_vazio.png", cv2.IMREAD_GRAYSCALE)
-    gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-    for player in players:
-        pos = player.position
-        if pos in player_positions:
-            x, y, w, h = player_positions[pos]
-            region = gray_image[y:y+h, x:x+w]
-            
-            is_present = True
-            if absent_template is not None:
-                result = cv2.matchTemplate(region, absent_template, cv2.TM_CCOEFF_NORMED)
-                if np.max(result) >= threshold:
-                    is_present = False
-            
-            player.is_present = is_present
-
-    return players
