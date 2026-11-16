@@ -1,40 +1,39 @@
-# poker_table_recognizer.py
+"""
+poker_table_recognizer.py
+Reconhecimento visual da mesa (CV): template matching, ROIs, OCR.
+
+Migracao pra estrutura refatorada (8 pontos aplicados):
+  1. SEM dataclasses locais e SEM TableState -- tudo vem de core.models;
+  2. CharacterRecognizer inalterado (CV de template matching que funciona);
+  3. Player construido com seat= (antes position=);
+  4. process_table() retorna TableInfo DIRETO -- variaveis locais corretas
+     (hand_id / dealer_position / community_cards / bb_positions);
+  5. BlindsManager removido -- usa core.blinds.validate_preflop_bets
+     (por valor apostado) com fallback geometrico pelo button;
+  6. pot/small_pot como float via convert_to_float (tolera "" e lixo de OCR;
+     float("") direto levantava ValueError);
+  7. community_cards como List[Card] com rank/suit validados (zip evita
+     IndexError quando OCR de rank e suit tem tamanhos diferentes);
+  8. Campos novos preenchidos quando possivel: bb_positions, sb_amount,
+     bb_amount, snapshot_path. hero/shown_cards/pots ficam pra uma proxima
+     iteracao (exigem novas ROIs/templates na config).
+"""
 import numpy as np
 from pathlib import Path
 from enum import Enum
 from typing import Dict, List, Optional
-from dataclasses import dataclass
-from core.blinds_manager import BlindsManager
+import cv2
+
 from config.room_config import DetectionMethod, RoomConfig
 from config.pixel_detector import detect_pixels_in_window
-import cv2
-from action.poker_hand_state import Position
+
+from core.models import Player, TableInfo, Card, Position
+from core.blinds import validate_preflop_bets
 from core.debug_image import create_debug_image
 
 
-
-@dataclass
-class Player:
-    name: str
-    position: int
-    pos_preflop: Position
-    is_present: bool
-    is_active: bool
-    stack: float
-    current_bet: float
-    just_joined: bool = False
-    pending_big_blind: bool = False
-
-
-@dataclass
-class TableState:
-    hand: str
-    pot: str
-    small_pot: str
-    dealer_position: int
-    community_cards: List[tuple]
-    players: List[Player]
-
+VALID_RANKS = set("23456789TJQKA")
+VALID_SUITS = set("SHDC")
 
 
 class RecognitionCategory(Enum):
@@ -47,8 +46,10 @@ class RecognitionCategory(Enum):
     SUITS = 'suits'
     RANKS = 'ranks'
 
+
 class CharacterRecognizer:
     def __init__(self, template_path, template_mapping: Optional[Dict] = None):
+        self.debug_candidates = True
         self.base_path = Path(template_path)
         self.templates: Dict[str, List] = {}
         self.target_size = (32, 32)
@@ -83,7 +84,7 @@ class CharacterRecognizer:
             for char, template_files in template_mapping.items():
                 if not isinstance(template_files, (list, tuple)):
                     template_files = [template_files]
-                    
+
                 template_list = []
                 for template_file in template_files:
                     template_path = template_dir / template_file
@@ -111,11 +112,11 @@ class CharacterRecognizer:
         for char, template_list in self.templates.items():
             for template in template_list:
                 w, h = template.shape[::-1]
-                
+
                 res = cv2.matchTemplate(img_gray, template, cv2.TM_CCOEFF_NORMED)
-              
+
                 locations = np.where(res >= self.threshold)
-                
+
                 for pt in zip(*locations[::-1]):
                     score = res[pt[1], pt[0]]
                     match_info = {
@@ -130,102 +131,86 @@ class CharacterRecognizer:
 
         all_matches.sort(key=lambda x: x['score'], reverse=True)
         final_characters = []
-        
+
         for match in all_matches:
             if not self._is_overlapping_with_matches(match, final_characters):
                 final_characters.append(match)
-        
+
         final_characters.sort(key=lambda x: x['point'][0])
         return "".join([char['char'] for char in final_characters])
 
-
     def convert_to_float(self, text: str) -> float:
-        """Converte um texto reconhecido em um número float, lidando com erros."""
-        num_str = text.strip().replace(',', '.')  # Caso existam vírgulas como separador decimal
-
-        num_str = text.strip().replace(',', '.')  # Substitui vírgula por ponto  
-        num_str = num_str.replace('..', '.')  # Corrige múltiplos pontos seguidos  
-        # Substitui '.' isolado por '', e se a string for vazia, assume 0.0
+        """Converte um texto reconhecido em float, tolerando "", lixo de OCR
+        e virgula decimal. Nunca levanta excecao."""
+        num_str = (text or "").strip().replace(',', '.')
+        num_str = num_str.replace('..', '.').rstrip('.')
         try:
             return float(num_str) if num_str.replace('.', '', 1).isdigit() else 0.0
         except ValueError:
             return 0.0
-        
 
     def recognize_number_from_roi(self, roi: np.ndarray) -> float:
         """Reconhece um número a partir da ROI da imagem e o converte para float."""
-        text = self.recognize_text_from_roi(roi)  # Usa o método de reconhecimento de texto
-        return self.convert_to_float(text)  # Converte o resultado para float
-
-
-
+        text = self.recognize_text_from_roi(roi)
+        return self.convert_to_float(text)
 
     def _is_overlapping_with_matches(self, new_match: dict, existing_matches: list) -> bool:
         new_x, new_y = new_match['point']
         new_w, new_h = new_match['width'], new_match['height']
-        
+
         new_rect = {
             'left': new_x,
             'right': new_x + new_w,
             'top': new_y,
             'bottom': new_y + new_h
         }
-        
+
         for existing in existing_matches:
             ex_x, ex_y = existing['point']
             ex_w, ex_h = existing['width'], existing['height']
-            
+
             exist_rect = {
                 'left': ex_x,
                 'right': ex_x + ex_w,
                 'top': ex_y,
                 'bottom': ex_y + ex_h
             }
-            
-            if not (new_rect['right'] < exist_rect['left'] or 
-                    new_rect['left'] > exist_rect['right'] or 
-                    new_rect['bottom'] < exist_rect['top'] or 
+
+            if not (new_rect['right'] < exist_rect['left'] or
+                    new_rect['left'] > exist_rect['right'] or
+                    new_rect['bottom'] < exist_rect['top'] or
                     new_rect['top'] > exist_rect['bottom']):
-                
+
                 overlap_width = min(new_rect['right'], exist_rect['right']) - max(new_rect['left'], exist_rect['left'])
                 overlap_height = min(new_rect['bottom'], exist_rect['bottom']) - max(new_rect['top'], exist_rect['top'])
                 overlap_area = overlap_width * overlap_height
-                
+
                 min_area = min(new_w * new_h, ex_w * ex_h)
                 if overlap_area > 0.25 * min_area:
                     return True
-        
+
         return False
-    
 
 
-@dataclass
-class TableInfo:
-    # Estado completo da mesa
-    hand: str
-    pot: str
-    small_pot: str
-    dealer_position: int
-    community_cards: List[tuple]
-    players: List[Player]
-    bb_positions: List[int]
-
-    
 class TableRecognizer:
     def __init__(self, config: RoomConfig):
+        
         self.config = config
         # passa o mapping dict da config (ou None) para o CharacterRecognizer
-        self.char_recognizer = CharacterRecognizer(config.template_path, getattr(config, 'template_mapping', None))
+        self.char_recognizer = CharacterRecognizer(
+            config.template_path,
+            getattr(config, 'template_mapping', None),
+        )
         self.player_detector = PlayerDetector(config)
 
         self.dealer_positions = config.dealer_config.positions
-        self.dealer_button_color = config.dealer_config.color_rgb 
+        self.dealer_button_color = config.dealer_config.color_rgb
         self.color_threshold = config.dealer_config.color_threshold
         self.dealer_neighborhood_radius = config.dealer_config.neighborhood_radius
         self.dealer_min_matching_ratio = config.dealer_config.min_matching_ratio
 
-        self.blinds_manager = BlindsManager(min_small_blind=1, min_big_blind=2)
-        
+    # ---- Dealer ----
+
     def detect_dealer_position(self, image: np.ndarray) -> int:
         for position, (x, y) in self.dealer_positions.items():
             pixel_color = image[y, x]
@@ -251,15 +236,96 @@ class TableRecognizer:
         )
         return next((position for position, found in detections.items() if found), -1)
 
-    def process_table(self, image: np.ndarray) -> TableState:
+    # ---- Blinds / button ----
+
+    def _assign_button(self, players: List[Player], dealer_position: int) -> None:
+        """Marca o BTN no seat do dealer (se presente e sem posicao definida)."""
+        seat_to_player = {p.seat: p for p in players}
+        dealer = seat_to_player.get(dealer_position)
+        if dealer and dealer.is_present and dealer.pos_preflop is None:
+            dealer.pos_preflop = Position.BTN
+
+    def _assign_blinds_geometric(self, players: List[Player], dealer_position: int) -> None:
         """
-        Process the poker table image and extract all relevant information.
+        Fallback quando validate_preflop_bets nao identifica os blinds
+        (ex.: apostas ainda nao legiveis no inicio da mao).
+
+        Regra (igual ao antigo BlindsManager.identify_blinds):
+          - 3+ jogadores: SB = primeiro seat PRESENTE apos o button (ordem
+            crescente de seat, com wrap-around); BB = proximo presente.
+          - Heads-up: o proprio button eh o SB; o outro jogador eh o BB.
+        """
+        if dealer_position < 0 or not players:
+            return
+
+        seat_to_player = {p.seat: p for p in players}
+        present_seats = sorted(p.seat for p in players if p.is_present)
+        if len(present_seats) < 2:
+            return
+
+        # Heads-up: button = SB
+        if len(present_seats) == 2:
+            if dealer_position in present_seats:
+                other = next(s for s in present_seats if s != dealer_position)
+                seat_to_player[dealer_position].pos_preflop = Position.SB
+                seat_to_player[other].pos_preflop = Position.BB
+            return
+
+        # 3+ jogadores: percorre seats a partir do button+1, com wrap
+        n = max(present_seats) + 1
+        sb_seat = None
+        bb_seat = None
+        for step in range(1, n + 1):
+            seat = (dealer_position + step) % n
+            if seat not in seat_to_player or not seat_to_player[seat].is_present:
+                continue
+            if sb_seat is None:
+                sb_seat = seat
+            else:
+                bb_seat = seat
+                break
+
+        if sb_seat is not None and bb_seat is not None:
+            seat_to_player[sb_seat].pos_preflop = Position.SB
+            seat_to_player[bb_seat].pos_preflop = Position.BB
+
+    def _resolve_bb_amount(self) -> float:
+        """BB configurado (config.bb_amount). 0.0 se nao configurado."""
+        return float(getattr(self.config, 'bb_amount', 0.0) or 0.0)
+
+    # ---- Board ----
+
+    def _parse_board(self, rank_text: str, suit_text: str) -> List[Card]:
+        """
+        Monta o board a partir dos textos OCR de rank e suit (um caractere
+        por carta, na ordem). zip() tolera tamanhos diferentes entre os dois
+        textos (o antigo range(len(rank)) levantava IndexError nesse caso).
+        Cartas com caractere invalido sao descartadas. Maximo 5 cartas.
+        """
+        cards: List[Card] = []
+        for r, s in zip((rank_text or "").upper(), (suit_text or "").upper()):
+            if r in VALID_RANKS and s in VALID_SUITS:
+                cards.append(Card(rank=r, suit=s))
+            if len(cards) >= 5:
+                break
+        return cards
+
+    # ---- Pipeline principal ----
+
+    def process_table(
+        self,
+        image: np.ndarray,
+        snapshot_path: Optional[str] = None,
+    ) -> TableInfo:
+        """
+        Processa a imagem da mesa e extrai todas as informacoes.
 
         Args:
-            image: The table screenshot as a numpy array
-            
+            image: screenshot da mesa como numpy array (BGR).
+            snapshot_path: caminho do PNG que originou esta leitura (opcional).
+
         Returns:
-            TableState object containing all recognized information
+            TableInfo (core.models) com tudo que foi reconhecido.
         """
         players = self.player_detector.detect_players(image)
         roi_config = self.config.roi_config
@@ -268,9 +334,9 @@ class TableRecognizer:
         def process_rois(roi_dict, category, processor, attr_name=None):
             if not roi_dict:
                 return None
-                
+
             self.char_recognizer.load_templates(category)
-            
+
             # Para ROIs de jogador (com posição no nome)
             if attr_name:
                 for name, (x, y, w, h) in roi_dict.items():
@@ -287,86 +353,93 @@ class TableRecognizer:
                 roi = image[y:y+h, x:x+w]
                 return processor(roi)
 
-        # Processamento simplificado para todas as regiões
-        process_rois(roi_config.stacks, RecognitionCategory.STACK, 
-                    self.char_recognizer.recognize_number_from_roi, 'stack')
+        # Preenche stack / current_bet / name nos players
+        process_rois(roi_config.stacks, RecognitionCategory.STACK,
+                     self.char_recognizer.recognize_number_from_roi, 'stack')
 
-        process_rois(roi_config.bets, RecognitionCategory.BET, 
-                    self.char_recognizer.recognize_number_from_roi, 'current_bet')
-        
-        process_rois(roi_config.names, RecognitionCategory.NAMES, 
-                    self.char_recognizer.recognize_text_from_roi, 'name')
-        
-        # Processamento unificado para pot e smallpot
-        pot = process_rois(roi_config.pot, RecognitionCategory.POT, 
-                        self.char_recognizer.recognize_text_from_roi) or ""
+        process_rois(roi_config.bets, RecognitionCategory.BET,
+                     self.char_recognizer.recognize_number_from_roi, 'current_bet')
 
-        small_pot = process_rois(roi_config.smallpot, RecognitionCategory.SMALLPOT, 
+        process_rois(roi_config.names, RecognitionCategory.NAMES,
+                     self.char_recognizer.recognize_text_from_roi, 'name')
+
+        # Pot / smallpot / hand id (texto; conversao numerica depois)
+        pot_text = process_rois(roi_config.pot, RecognitionCategory.POT,
                                 self.char_recognizer.recognize_text_from_roi) or ""
-        hand = process_rois(roi_config.hand, RecognitionCategory.HAND, 
-                        self.char_recognizer.recognize_text_from_roi) or ""
 
-        # Detect dealer position
+        small_pot_text = process_rois(roi_config.smallpot, RecognitionCategory.SMALLPOT,
+                                      self.char_recognizer.recognize_text_from_roi) or ""
+
+        hand_id = process_rois(roi_config.hand, RecognitionCategory.HAND,
+                               self.char_recognizer.recognize_text_from_roi) or ""
+
+        # Dealer position
         if self.config.dealer_config.detection_method == DetectionMethod.ARRAY_PIXEL:
             dealer_position = self.detect_dealer_array_pixel(image)
         else:
             dealer_position = self.detect_dealer_position(image)
 
-        # Identifica Sb e BB in Players
-        players = self.blinds_manager.identify_blinds(players, dealer_position)
-        # Identifica as cartas do board
-        rank = process_rois(roi_config.ranks, RecognitionCategory.RANKS, 
-                                self.char_recognizer.recognize_text_from_roi) or ""
-        suit = process_rois(roi_config.suits, RecognitionCategory.SUITS, 
-                                self.char_recognizer.recognize_text_from_roi) or ""
-        community_cards = []
-        for c in range(len(rank)):
-            community_cards.append((rank[c], suit[c]))
+        # Board (List[Card] validada)
+        rank_text = process_rois(roi_config.ranks, RecognitionCategory.RANKS,
+                                 self.char_recognizer.recognize_text_from_roi) or ""
+        suit_text = process_rois(roi_config.suits, RecognitionCategory.SUITS,
+                                 self.char_recognizer.recognize_text_from_roi) or ""
+        community_cards = self._parse_board(rank_text, suit_text)
+
+        # Blinds:
+        #   1. marca o button (sempre, independente do metodo de blinds);
+        #   2. SB/BB por valor apostado (validate_preflop_bets);
+        #   3. fallback geometrico pelo button se as apostas nao identificar.
+        self._assign_button(players, dealer_position)
+        bb_amount = self._resolve_bb_amount()
+        bb_positions: List[int] = []
+        if bb_amount > 0:
+            bb_positions = validate_preflop_bets(players, bb_amount)
+        if not bb_positions:
+            self._assign_blinds_geometric(players, dealer_position)
 
         # Create debug image if needed
         if self.config.debug_mode:
-            create_debug_image(image, self.config, dealer_position, players)
-#config: RoomConfig, players: List[Player], image: np.ndarray, player_positions: dict, template_path: str, threshold: float
-        return TableState(
-            community_cards=community_cards,
-            hand=hand,
-            pot=pot,
-            small_pot=small_pot,
+            create_debug_image(image, self.config, dealer_position, players,
+                               community_cards)
+
+        return TableInfo(
+            hand=hand_id,
+            pot=self.char_recognizer.convert_to_float(pot_text),
+            small_pot=self.char_recognizer.convert_to_float(small_pot_text),
             dealer_position=dealer_position,
-            players=players
+            community_cards=community_cards,
+            players=players,
+            bb_positions=bb_positions,
+            sb_amount=(bb_amount / 2) if bb_amount > 0 else 0.0,
+            bb_amount=bb_amount,
+            snapshot_path=snapshot_path,
         )
 
 
 class TableAnalyzer:
+    """Facade usado pelo PokerRoom (rooms/poker_room.py)."""
+
     def __init__(self, config: RoomConfig):
         self.table_config = config
-        self.blinds_manager = BlindsManager(min_small_blind=1, min_big_blind=2)
         self.table_recognizer = TableRecognizer(config)
-        
-    def analyze_table(self, snapshot: Optional[np.ndarray] = None) -> TableInfo:
+
+    def analyze_table(
+        self,
+        snapshot: Optional[np.ndarray] = None,
+        snapshot_path: Optional[str] = None,
+    ) -> TableInfo:
+        """
+        Retorna o TableInfo produzido pelo recognizer (sem re-conversao --
+        o processo inteiro vive no process_table do TableRecognizer).
+        """
         if snapshot is None:
             # For testing purposes, load a sample image
             snapshot = cv2.imread(self.table_config.sample_image_path)
             if snapshot is None:
                 raise ValueError("No snapshot provided and couldn't load sample image")
-   
-        # Processar a mesa e obter o estado completo
-        table_state = self.table_recognizer.process_table(snapshot)
-        
-        # Validar apostas de big blind
-        bb_positions = self.blinds_manager.validate_preflop_bets(table_state.players, bb_amount=2)
-        
-        # Retornar TableInfo com todas as informações (sem redundância)
-        return TableInfo(
-            hand=table_state.hand,
-            pot=table_state.pot,
-            small_pot=table_state.small_pot,
-            dealer_position=table_state.dealer_position,
-            community_cards=table_state.community_cards,
-            players=table_state.players,
-            bb_positions=bb_positions
-        )
 
+        return self.table_recognizer.process_table(snapshot, snapshot_path=snapshot_path)
 
 
 class PlayerDetector:
@@ -378,25 +451,27 @@ class PlayerDetector:
     def detect_players(self, image: np.ndarray) -> List[Player]:
         players = []
         gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        
+
         for pos, roi in self.player_positions.items():
-            x, y, w, h = roi #room_config.py player_detection_config
+            x, y, w, h = roi
             region = gray_image[y:y+h, x:x+w]
-            
             is_present = True
             if self.absent_template is not None:
                 result = cv2.matchTemplate(region, self.absent_template, cv2.TM_CCOEFF_NORMED)
                 if np.max(result) >= self.threshold:
                     is_present = False
-  
             players.append(Player(
-                is_active= False,
-                name = '',
-                position=pos,
-                pos_preflop='',
-                is_present=is_present,
+                name='',
+                seat=pos,                  # renomeado de 'position' para 'seat'
                 stack=0.0,
-                current_bet=0.0
+                current_bet=0.0,
+                is_present=is_present,
+                # is_active: o recognizer ainda nao le badge de fold, entao
+                # usa presenca como proxy (player presente = ativo). Quando
+                # o OCR de badges (last_action) existir, marcar fold aqui.
+                is_active=is_present,
+                # pos_preflop default None; eh preenchido pelo pipeline de
+                # blinds no TableRecognizer (BTN/SB/BB).
             ))
 
         return players

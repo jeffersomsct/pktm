@@ -62,7 +62,7 @@ def get_swc_poker_config() -> RoomConfig:
     # template mapping kept here (v1). Keys use category.value strings: 'stack','bet','pot','smallpot','names'
     template_mapping = {
         "stack": {
-            '0': ['0.png'], '1': ['1.png'], '2': ['2.png', '2v2.png'], '3': ['3.png'],
+            '0': ['0.png'], '1': ['1.png'],'2': ['2.png', '2v2.png'], '3': ['3.png'],
             '4': ['4.png', '4_v2.png'], '5': ['5v2.png'], '6': ['6.png', '6_v2.png'],
             '7': ['7v2.png'], '8': ['8.png', '8_v2.png'], '9': ['9v2.png'],
             '.': ['ponto.png', 'ponto_v2.png'], '': ['nada.png']
@@ -199,6 +199,95 @@ def get_swc_poker_config_v2() -> RoomConfig:
             smallpot={"smallpot": [362, 310, 102, 21]},
             money_exists={"player_7": [158, 119, 13]},
             hand={"hand": [733, 30, 91, 11]},
+            ranks={"rank": [256, 209, 279, 23]},
+            suits={"suit": [256, 234, 279, 13]},
+            #ranks={"rank_1": [256, 209, 11, 23], "rank_2": [323, 209, 11, 23],"rank_3": [390, 209, 11, 23],"rank_4": [457, 209, 11, 23],"rank_5": [524, 209, 11, 23]},
+            #suits={"suit_1": [256, 234, 11, 13], "suit_2": [323, 234, 11, 13],"suit_3": [390, 234, 11, 13],"suit_4": [457, 234, 11, 13],"suit_5": [524, 234, 11, 13]},
+        ),
+        player_detection_config=PlayerDetectionConfig(
+            detection_method=DetectionMethod.TEMPLATE_MATCHING,
+            positions={0: [396, 471, 35, 12], 1: [589, 441, 35, 12], 2: [717, 349, 35, 12],
+                       3: [717, 245, 35, 12], 4: [612, 140, 35, 12], 5: [179, 140, 35, 12],
+                       6: [74, 245, 35, 12], 7: [74, 349, 35, 12], 8: [202, 441, 35, 12]},
+            threshold=0.8
+        )
+    )
+
+def get_swc_poker_config_v3() -> RoomConfig:
+    template_path = "imgs/models/swc/v3"
+
+    template_mapping = {
+         "roomId": {
+            '0': ['0.png'], '1': ['1.png'], '2': ['2.png'], '3': ['3.png'],
+            '4': ['4.png'], '5': ['4.png'], '6': ['6.png'],
+            '7': ['7.png'], '8': ['8.png'], '9': ['9.png'],
+            '.': ['ponto.png'], '': ['nada.png']
+        },
+        "stack": {
+            '0': ['0.png'], '1': ['1.png', '1v2.png'], '2': ['2.png'], '3': ['3.png'],
+            '4': ['4.png'], '5': ['5.png'], '6': ['6.png'],
+            '7': ['7.png'], '8': ['8.png'], '9': ['9.png'],
+            '.': ['ponto.png'], '': ['nada.png']
+        },
+        "bet": {str(d): [f"{d}.png"] for d in range(10)} | {'.': ['ponto.png']},
+        "pot": {str(d): [f"{d}.png"] for d in range(10)} | {'.': ['ponto.png'], '6': ['6v2.png']},
+        "hand": {str(d): [f"{d}.png"] for d in range(10)} | {'.': ['ponto.png']},
+        "smallpot": {str(d): [f"{d}.png"] for d in range(10)} | {'.': ['ponto.png']},
+        "names": {
+            'A': ['A.png'], 'a': ['a_.png','a_v2.png'], 'b': ['b_.png'], 'B': ['B.png', 'Bv2.png','Bv3.png'],
+            'C': ['C.png', 'Cv2.png'], 'c': ['c_.png'], 'D': ['D.png', 'Dv2.png'], 'd': ['d_.png'],
+            'E': ['E.png', 'Ev2.png'], 'e': ['e_.png'], 'F': ['F.png'], 'f': ['f_.png'], 'G': ['G.png', 'Gv2.png'],
+            'g': ['g_.png'], 'H': ['H.png','Hv2.png','Hv3.png'], 'h': ['h_.png'], 'I': ['I.png'], 'i': ['i_.png'], 'j': ['j_.png'],
+            'K': ['K.png','Kv2.png',], 'k': ['k_.png'], 'L': ['L.png'], 'l': ['l_.png'],
+            'M': ['M.png'], 'm': ['m_.png','m_v2.png'], 'N': ['N.png'],
+            'n': ['n_.png'], 'O': ['O.png','Ov2.png'], 'o': ['o_.png'],
+            'P': ['P.png','Pv2.png'], 'p': ['p_.png','p_v2.png'], 'Q': ['Q.png'], 'q': ['q_.png'],'R': ['R.png','Rv2.png','Rv3.png'], 'r': ['r_.png'],
+            'S': ['S.png', 'Sv2.png'], 's': ['s_.png'], 'T': ['T.png'],
+            't': ['t_.png'], 'U': ['U.png'], 'u': ['u_.png'], 'V': ['V.png'], 'v': ['v_.png'],'x': ['x_.png'],
+            'W': ['W.png'], 'w': ['w_.png'], 'y': ['y_.png'], 'Z': ['Z.png','Zv2.png'],
+            'z': ['z_.png'], '0': ['0.png'], '1': ['1.png'], '2': ['2.png'], '3': ['3.png'], '4': ['4.png'], '5': ['5.png'],'6': ['6.png'],
+            '7': ['7.png'], '8': ['8.png'], '9': ['9.png'], '.': ['ponto.png'],'_': ['_.png','_v2.png'],'-': ['-.png']
+        },
+          'ranks': {rank: f"{rank}.png" for rank in '23456789JQKA'},
+          'suits': {suit: f"{suit}.png" for suit in 'DHSC'}
+    }
+
+    return RoomConfig(
+        room_id="swc_poker",
+        room_name="SwC Poker",
+        template_path=template_path,
+        sample_image_path=template_path + "/table_example.png",
+        emptySeatTemplate=template_path + "/others/assento_vazio.png",
+        template_mapping=template_mapping,
+        dealer_config=DealerConfig(
+            detection_method=DetectionMethod.PIXEL_COLOR,
+            positions={0: (380, 392), 1: (0, 0), 2: (672, 366), 3: (667, 221),
+                       4: (615, 181), 5: (210, 181), 6: (156, 221), 7: (137, 367), 8: (307, 367)},
+            color_rgb=(0, 0, 0),
+            color_threshold=30
+        ),
+        roi_config=ROIConfig(
+            stacks={ "stack_0": [360, 520, 108, 15], "stack_1": [547, 459, 108, 15], "stack_2": [692, 379, 108, 15],
+                     "stack_3": [688, 230, 108, 15], "stack_4": [547, 149, 108, 15], "stack_5": [182, 149, 108, 15],
+                     "stack_6": [39, 222, 108, 15], "stack_7": [15, 366, 108, 15], "stack_8": [175, 459, 108, 15] },
+            bets={ "bet_0": [430, 347, 63, 33], "bet_1": [514, 330, 63, 33], "bet_2": [623, 278, 63,33],
+                   "bet_3": [610, 201, 63, 33], "bet_4": [509, 171, 63, 33], "bet_5": [252, 172, 63, 33],
+                   "bet_6": [159, 201, 63, 33], "bet_7": [135, 282, 63, 33], "bet_8": [248, 310, 63, 33] },
+            names={ 
+                    "name_0": [362, 497, 103, 15], 
+                    "name_1": [548, 405, 103, 15], 
+                    "name_2": [694, 356, 103, 15],
+                    "name_3": [690, 207, 103, 15], 
+                    "name_4": [549, 126, 103, 15], 
+                    "name_5": [184, 126, 103, 15],
+                    "name_6": [41, 199, 103, 15], 
+                    "name_7": [17, 312, 103, 15], 
+                    "name_8": [176, 436, 103, 15] 
+                    },
+            pot={"pot": [362, 188, 102, 13]},
+            smallpot={"smallpot": [362, 338, 102, 21]},
+            money_exists={"player_7": [158, 119, 13]},
+            hand={"hand": [733, 62, 91, 11]},
             ranks={"rank": [256, 209, 279, 23]},
             suits={"suit": [256, 234, 279, 13]},
             #ranks={"rank_1": [256, 209, 11, 23], "rank_2": [323, 209, 11, 23],"rank_3": [390, 209, 11, 23],"rank_4": [457, 209, 11, 23],"rank_5": [524, 209, 11, 23]},

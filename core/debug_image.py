@@ -1,234 +1,248 @@
+"""
+core/debug_image.py
+Visualizacao de debug: desenha ROIs, cartas, posicoes e labels na imagem.
+
+Migracao da versao anterior:
+  - player.position -> player.seat
+  - community_cards: List[tuple] -> List[Card] (usar card.rank / card.suit)
+"""
 import numpy as np
 import cv2
 from typing import List
 
-def create_debug_image(image: np.ndarray, config, dealer_position: int, players: list, community_cards: List[tuple] = None, player_positions: dict = None):
+from core.models import Card
+
+
+_SUIT_EMOJIS = {
+    'S': '♠',
+    'H': '♥',
+    'D': '♦',
+    'C': '♣',
+}
+
+
+def _card_rank_suit(card_or_tuple):
+    """Aceita tanto Card dataclass quanto tuple (rank, suit) por compat."""
+    if isinstance(card_or_tuple, Card):
+        return card_or_tuple.rank, card_or_tuple.suit
+    if isinstance(card_or_tuple, (tuple, list)) and len(card_or_tuple) >= 2:
+        return card_or_tuple[0], card_or_tuple[1]
+    return "?", "?"
+
+
+def create_debug_image(
+    image: np.ndarray,
+    config,
+    dealer_position: int,
+    players: list,
+    community_cards: List = None,
+    player_positions: dict = None,
+):
+    """
+    Cria imagem de debug com todas as ROIs e informacoes reconhecidas.
+
+    Args:
+        image: snapshot BGR.
+        config: RoomConfig com roi_config, dealer_config.
+        dealer_position: seat do dealer (-1 se nao detectado).
+        players: List[Player].
+        community_cards: List[Card] (ou List[tuple] por compat).
+        player_positions: dict opcional {name: PlayerPositionInfo}
+            (legado; info ja esta em Player.pos_preflop).
+    """
     debug_image = image.copy()
     roi_config = config.roi_config
-    
-    # Mapeamento de naipes para emojis
-    suit_emojis = {
-        'S': '♠',  # Espadas
-        'H': '♥',  # Copas
-        'D': '♦',  # Ouros
-        'C': '♣'   # Paus
-    }
 
-    # Desenha as ROIs e cartas da comunidade
-    if hasattr(roi_config, 'ranks') and hasattr(roi_config, 'suits'):
-        for i in range(1, 6):  # Para cada posição de carta (flop, turn, river)
-            rank_roi = getattr(roi_config.ranks, f'rank_{i}', None)
-            suit_roi = getattr(roi_config.suits, f'suit_{i}', None)
-            
-            # Verifica se temos uma carta reconhecida para esta posição
-            card_text = ''
-            card_info = ''
+    # ---- Cartas comunitarias ----
+    if hasattr(roi_config, "ranks") and hasattr(roi_config, "suits"):
+        for i in range(1, 6):  # flop, turn, river
+            rank_roi = getattr(roi_config.ranks, f"rank_{i}", None)
+            suit_roi = getattr(roi_config.suits, f"suit_{i}", None)
+
+            card_text = ""
+            card_info = ""
             if community_cards and i <= len(community_cards):
-                rank, suit = community_cards[i-1]
-                card_text = f"{rank}{suit_emojis.get(suit, suit)}"
+                rank, suit = _card_rank_suit(community_cards[i - 1])
+                card_text = f"{rank}{_SUIT_EMOJIS.get(suit, suit)}"
                 card_info = f"Card {i}: {rank}{suit}"
-            
-            # Desenha ROI do rank
+
+            # ROI do rank
             if rank_roi:
                 x, y, w, h = rank_roi
-                # Desenha retângulo laranja para o rank
-                cv2.rectangle(debug_image, (x, y), (x+w, y+h), (0, 165, 255), 2)
-                
-                # Se tiver carta reconhecida, exibe o texto
+                cv2.rectangle(debug_image, (x, y), (x + w, y + h),
+                              (0, 165, 255), 2)
                 if card_text:
-                    # Fundo para o texto
-                    (text_w, text_h), _ = cv2.getTextSize(card_text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
-                    cv2.rectangle(debug_image, (x, y - text_h - 10), 
-                                (x + text_w + 10, y), (0, 0, 0), -1)
-                    # Texto da carta
-                    cv2.putText(debug_image, card_text, (x + 5, y - 5), 
-                              cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-            
-            # Desenha ROI do naipe
+                    (text_w, text_h), _ = cv2.getTextSize(
+                        card_text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
+                    cv2.rectangle(debug_image,
+                                  (x, y - text_h - 10),
+                                  (x + text_w + 10, y), (0, 0, 0), -1)
+                    cv2.putText(debug_image, card_text, (x + 5, y - 5),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7,
+                                (0, 255, 255), 2)
+
+            # ROI do naipe
             if suit_roi:
                 x, y, w, h = suit_roi
-                # Desenha retângulo roxo para o naipe
-                cv2.rectangle(debug_image, (x, y), (x+w, y+h), (255, 0, 255), 2)
-                
-                # Se tiver carta reconhecida, exibe o naipe
+                cv2.rectangle(debug_image, (x, y), (x + w, y + h),
+                              (255, 0, 255), 2)
                 if card_text and len(card_text) > 1:
-                    suit = card_text[-1]  # Pega o emoji do naipe
-                    (text_w, text_h), _ = cv2.getTextSize(suit, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
-                    cv2.rectangle(debug_image, (x, y - text_h - 10), 
-                                (x + text_w + 10, y), (0, 0, 0), -1)
-                    cv2.putText(debug_image, suit, (x + 5, y - 5), 
-                              cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-            
-            # Exibe o texto da carta no canto da imagem
-            if card_info:
-                cv2.putText(debug_image, card_info, 
-                          (10, 30 + (i-1)*25), cv2.FONT_HERSHEY_SIMPLEX, 
-                          0.7, (0, 255, 255), 2)
+                    suit_char = card_text[-1]
+                    (text_w, text_h), _ = cv2.getTextSize(
+                        suit_char, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
+                    cv2.rectangle(debug_image,
+                                  (x, y - text_h - 10),
+                                  (x + text_w + 10, y), (0, 0, 0), -1)
+                    cv2.putText(debug_image, suit_char, (x + 5, y - 5),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7,
+                                (0, 255, 255), 2)
 
-    # Draw ROIs for stacks
+            if card_info:
+                cv2.putText(debug_image, card_info,
+                            (10, 30 + (i - 1) * 25),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7,
+                            (0, 255, 255), 2)
+
+    # ---- Stacks ----
     for name, (x, y, w, h) in config.roi_config.stacks.items():
-        cv2.rectangle(debug_image, (x, y), (x+w, y+h), (0, 255, 0), 1)
-        position = int(name.split('_')[1])
-        stack_value = players[position].stack if position < len(players) else 0
-        cv2.putText(debug_image, f"Stack: {stack_value}", (x, y+h+15), 
+        cv2.rectangle(debug_image, (x, y), (x + w, y + h), (0, 255, 0), 1)
+        seat_idx = int(name.split("_")[1])
+        stack_value = players[seat_idx].stack if seat_idx < len(players) else 0
+        cv2.putText(debug_image, f"Stack: {stack_value}",
+                    (x, y + h + 15),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
-    # Draw ROIs for bets
+    # ---- Bets ----
     for name, (x, y, w, h) in config.roi_config.bets.items():
-        cv2.rectangle(debug_image, (x, y), (x+w, y+h), (255, 0, 0), 1)
-        position = int(name.split('_')[1])
-        bet_value = players[position].current_bet if position < len(players) else 0
-        cv2.putText(debug_image, f"Bet: {bet_value}", (x, y-5), 
+        cv2.rectangle(debug_image, (x, y), (x + w, y + h), (255, 0, 0), 1)
+        seat_idx = int(name.split("_")[1])
+        bet_value = (players[seat_idx].current_bet
+                     if seat_idx < len(players) else 0)
+        cv2.putText(debug_image, f"Bet: {bet_value}", (x, y - 5),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
 
-    # Draw ROIs for names
+    # ---- Names + positions ----
     for name, (x, y, w, h) in config.roi_config.names.items():
-        # Desenha o retângulo ao redor da área do nome
-        cv2.rectangle(debug_image, (x, y), (x+w, y+h), (0, 0, 255), 1)
-        
-        position = int(name.split('_')[1])
-        player_name = players[position].name if position < len(players) else ""
-        
-        # Get position information if available
-        position_text = ""
-        if player_positions and player_name in player_positions:
-            pos_info = player_positions[player_name]
-            position_text = pos_info.position_name.value
+        cv2.rectangle(debug_image, (x, y), (x + w, y + h), (0, 0, 255), 1)
+        seat_idx = int(name.split("_")[1])
+        player_name = (players[seat_idx].name
+                       if seat_idx < len(players) else "")
 
-        # Configurações de texto melhoradas
-        text = f"{player_name}"
-        font = cv2.FONT_HERSHEY_DUPLEX  # Fonte mais limpa e moderna
+        # Posicao pre-flop: vem direto do Player
+        position_text = ""
+        if seat_idx < len(players):
+            p = players[seat_idx]
+            if p.pos_preflop and hasattr(p.pos_preflop, "value"):
+                position_text = p.pos_preflop.value
+            elif player_positions and player_name in player_positions:
+                # Fallback legado
+                pos_info = player_positions[player_name]
+                if hasattr(pos_info.position_name, "value"):
+                    position_text = pos_info.position_name.value
+
+        font = cv2.FONT_HERSHEY_DUPLEX
         font_scale = 0.6
         thickness = 1
-        text_color = (200, 255, 200)  # Verde claro suave (BGR)
-        bg_color = (40, 40, 40)      # Cinza escuro para fundo
+        text_color = (200, 255, 200)
+        bg_color = (40, 40, 40)
 
-        # Draw position text above name if available
+        text = f"{player_name}"
+        (text_width, text_height), baseline = cv2.getTextSize(
+            text, font, font_scale, thickness)
+
+        # Texto da posicao (acima do nome)
         if position_text:
-            # Position text settings
             pos_font_scale = 0.5
             pos_thickness = 1
-            pos_color = (255, 200, 100)  # Laranja suave para posições
-            pos_bg_color = (60, 40, 20)   # Marrom escuro para fundo da posição
-            
-            # Calculate position text size
+            pos_color = (255, 200, 100)
+            pos_bg_color = (60, 40, 20)
             (pos_text_width, pos_text_height), _ = cv2.getTextSize(
-                position_text, font, pos_font_scale, pos_thickness
-            )
-            
-            # Position text coordinates (above the name background)
+                position_text, font, pos_font_scale, pos_thickness)
             pos_bg_x1 = x
-            pos_bg_y1 = y - text_height - 10 - pos_text_height - 8  # Above name background
+            pos_bg_y1 = y - text_height - 10 - pos_text_height - 8
             pos_bg_x2 = x + pos_text_width
-            pos_bg_y2 = y - text_height - 12  # Just above name background
-            
-            # Draw position background
-            cv2.rectangle(
-                debug_image,
-                (pos_bg_x1, pos_bg_y1),
-                (pos_bg_x2, pos_bg_y2),
-                pos_bg_color,
-                -1  # Preenchido
-            )
-            
-            # Draw position text
-            cv2.putText(
-                debug_image,
-                position_text,
-                (x, y - text_height - 15),
-                font,
-                pos_font_scale,
-                pos_color,
-                pos_thickness,
-                lineType=cv2.LINE_AA
-            )
+            pos_bg_y2 = y - text_height - 12
+            cv2.rectangle(debug_image,
+                          (pos_bg_x1, pos_bg_y1),
+                          (pos_bg_x2, pos_bg_y2),
+                          pos_bg_color, -1)
+            cv2.putText(debug_image, position_text,
+                        (x, y - text_height - 15),
+                        font, pos_font_scale, pos_color,
+                        pos_thickness, lineType=cv2.LINE_AA)
 
-        # Calcula o tamanho do texto para criar o fundo
-        (text_width, text_height), baseline = cv2.getTextSize(
-            text, font, font_scale, thickness
-        )
-
-        # Define as coordenadas do retângulo de fundo (adjusted for position text)
         bg_x1 = x
-        bg_y1 = y - text_height - 10  # 10px acima do topo do retângulo
+        bg_y1 = y - text_height - 10
         bg_x2 = x + text_width
         bg_y2 = y - 5
-        
-        # Desenha o retângulo de fundo
-        cv2.rectangle(
-            debug_image, 
-            (bg_x1, bg_y1), 
-            (bg_x2, bg_y2), 
-            bg_color, 
-            -1  # Preenchido
-        )
-        
-        # Desenha o texto sobre o fundo
-        cv2.putText(
-            debug_image, 
-            text, 
-            (x, y - 8),  # Posição ajustada
-            font,
-            font_scale,
-            text_color,
-            thickness,
-            lineType=cv2.LINE_AA  # Anti-aliasing para melhor suavização
-        )
+        cv2.rectangle(debug_image,
+                      (bg_x1, bg_y1),
+                      (bg_x2, bg_y2),
+                      bg_color, -1)
+        cv2.putText(debug_image, text, (x, y - 8),
+                    font, font_scale, text_color,
+                    thickness, lineType=cv2.LINE_AA)
 
-    # Draw ROI for pot
+    # ---- Pot ----
     for name, (x, y, w, h) in config.roi_config.pot.items():
-        cv2.rectangle(debug_image, (x, y), (x+w, y+h), (255, 255, 0), 1)
-        cv2.putText(debug_image, f"Pot", (x, y-5), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
-    # Draw ROI for Hand Id
-    for name, (x, y, w, h) in config.roi_config.hand.items():
-        cv2.rectangle(debug_image, (x, y), (x+w, y+h), (255, 255, 150), 1)
-        cv2.putText(debug_image, f"Hand", (x, y-5), 
+        cv2.rectangle(debug_image, (x, y), (x + w, y + h), (255, 255, 0), 1)
+        cv2.putText(debug_image, "Pot", (x, y - 5),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
 
-    # Draw ROI for small pot
+    # ---- Hand ID ----
+    for name, (x, y, w, h) in config.roi_config.hand.items():
+        cv2.rectangle(debug_image, (x, y), (x + w, y + h),
+                      (255, 255, 150), 1)
+        cv2.putText(debug_image, "Hand", (x, y - 5),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
+
+    # ---- Small pot ----
     for name, (x, y, w, h) in config.roi_config.smallpot.items():
-        cv2.rectangle(debug_image, (x, y), (x+w, y+h), (0, 255, 255), 1)
-        cv2.putText(debug_image, f"Small Pot", (x, y-5), 
+        cv2.rectangle(debug_image, (x, y), (x + w, y + h),
+                      (0, 255, 255), 1)
+        cv2.putText(debug_image, "Small Pot", (x, y - 5),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
 
-    # Mark dealer position if detected
+    # ---- Dealer ----
     if dealer_position != -1 and dealer_position in config.dealer_config.positions:
         x, y = config.dealer_config.positions[dealer_position]
         cv2.circle(debug_image, (x, y), 3, (0, 100, 255), -1)
-        cv2.putText(debug_image, f"Dealer {dealer_position}", (x+10, y), 
+        cv2.putText(debug_image, f"Dealer {dealer_position}",
+                    (x + 10, y),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-    
-    # Mark SB and BB positions
+
+    # ---- SB / BB markers ----
     for player in players:
-        pos_label = ''
-        if player.pos_preflop:
-            pos_label = player.pos_preflop.value  # Extrai o valor string: 'SB' ou 'BB'
-
-        if pos_label in ['SB', 'BB']:
-            # Assumindo que as posições estão mapeadas como chaves em self.config.dealer_config.positions
-            if player.position in config.dealer_config.positions:
-                x, y = config.dealer_config.positions[player.position]
-                color = (0, 255, 255) if pos_label == 'SB' else (150, 200, 0)  # Amarelo para SB, Azul para BB
+        pos_label = ""
+        if player.pos_preflop and hasattr(player.pos_preflop, "value"):
+            pos_label = player.pos_preflop.value
+        if pos_label in ("SB", "BB"):
+            if player.seat in config.dealer_config.positions:
+                x, y = config.dealer_config.positions[player.seat]
+                color = (0, 255, 255) if pos_label == "SB" else (150, 200, 0)
                 cv2.circle(debug_image, (x, y), 5, color, -1)
-                cv2.putText(debug_image, f"{pos_label}", (x + 10, y),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                cv2.putText(debug_image, pos_label, (x + 10, y),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
-    # Draw community cards ROIs
-    if hasattr(roi_config, 'ranks') and hasattr(roi_config, 'suits'):
-    
-        # Draw rank ROI
-        x, y, w, h = roi_config.ranks[f"rank"]
-        cv2.rectangle(debug_image, (x, y), (x+w, y+h), (0, 255, 0), 1)
-        cv2.putText(debug_image, f"rank", (x, y-5), 
+    # ---- Hero marker ----
+    for player in players:
+        if player.is_hero:
+            if player.seat in config.dealer_config.positions:
+                x, y = config.dealer_config.positions[player.seat]
+                cv2.circle(debug_image, (x, y), 8, (0, 255, 255), 2)
+                cv2.putText(debug_image, "HERO", (x + 12, y - 8),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
+
+    # ---- ROIs base rank/suit (templates) ----
+    if hasattr(roi_config, "ranks") and hasattr(roi_config, "suits"):
+        x, y, w, h = roi_config.ranks["rank"]
+        cv2.rectangle(debug_image, (x, y), (x + w, y + h), (0, 255, 0), 1)
+        cv2.putText(debug_image, "rank", (x, y - 5),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-        
-        # Draw suit ROI
-        x, y, w, h = roi_config.suits[f"suit"]
-        cv2.rectangle(debug_image, (x, y), (x+w, y+h), (255, 0, 0), 1)
-        cv2.putText(debug_image, f"suit", (x, y-5), 
+        x, y, w, h = roi_config.suits["suit"]
+        cv2.rectangle(debug_image, (x, y), (x + w, y + h), (255, 0, 0), 1)
+        cv2.putText(debug_image, "suit", (x, y - 5),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
 
-    # Save debug image
-    print("Debug Mode ON: Image save: debug_table_recognition.png" )
+    print("Debug Mode ON: Image save: debug_table_recognition.png")
     cv2.imwrite("debug_table_recognition.png", debug_image)
