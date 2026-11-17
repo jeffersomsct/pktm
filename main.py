@@ -18,7 +18,6 @@ from PIL import Image
 import cv2
 
 from rooms.poker_room import PokerRoom
-from core.window_handler import detect_windows
 from core.printer import print_players_table, print_table_status, print_hand_summary
 from core.match_table import ObservedTable, find_matching_session
 from core.models import GameType, TableSession, TournamentInfo
@@ -96,6 +95,7 @@ def main():
 
     # ---- Captura ----
     if LIVE:
+        from core.window_handler import detect_windows   # so Windows (pywin32)
         tables = detect_windows(PKR_ROOM_NAME)
         if not tables:
             print("Nenhuma mesa encontrada.")

@@ -1,6 +1,6 @@
 # room_config.py
 from dataclasses import dataclass
-from typing import ClassVar, Dict, List, Tuple, Optional, Any
+from typing import ClassVar, Dict, List, Tuple, Optional
 from enum import Enum
 
 class DetectionMethod(Enum):
@@ -42,7 +42,7 @@ class PlayerDetectionConfig:
 
 @dataclass
 class RoomConfig:
-    debug_mode: ClassVar[bool] = True
+    debug_mode: ClassVar[bool] = False
     room_id: str
     room_name: str
     emptySeatTemplate: str
@@ -52,40 +52,11 @@ class RoomConfig:
     template_path: Optional[str] = None
     sample_image_path:  Optional[str] = None
     big_blind: Optional[float] = 0.04
-    template_mapping: Optional[Dict[str, Any]] = None   # now can hold mapping dicts
     
 
 # rooms/swc_poker.py
 def get_swc_poker_config() -> RoomConfig:
     template_path = "imgs/models/swc/v1"
-
-    # template mapping kept here (v1). Keys use category.value strings: 'stack','bet','pot','smallpot','names'
-    template_mapping = {
-        "stack": {
-            '0': ['0.png'], '1': ['1.png'],'2': ['2.png', '2v2.png'], '3': ['3.png'],
-            '4': ['4.png', '4_v2.png'], '5': ['5v2.png'], '6': ['6.png', '6_v2.png'],
-            '7': ['7v2.png'], '8': ['8.png', '8_v2.png'], '9': ['9v2.png'],
-            '.': ['ponto.png', 'ponto_v2.png'], '': ['nada.png']
-        },
-        "bet": {str(d): [f"{d}.png"] for d in range(10)} | {'.': ['ponto.png']},
-        "pot": {str(d): [f"{d}.png"] for d in range(10)} | {'.': ['ponto.png']},
-        "smallpot": {str(d): [f"{d}.png"] for d in range(10)} | {'.': ['ponto.png']},
-        "names": {
-            'A': ['A.png', 'Av2.png'], 'a': ['a_.png', 'a_v2.png'], 'b': ['b_.png'], 'B': ['B.png'],
-            'C': ['C.png'], 'c': ['c_.png'], 'D': ['D.png', 'Dv2.png'], 'd': ['d_.png', 'd_v2.png'],
-            'E': ['E.png', 'Ev2.png'], 'e': ['e_.png', 'e_v2.png'], 'f': ['f_.png'], 'G': ['G.png'],
-            'g': ['g_.png'], 'h': ['h_.png', 'h_v2.png'], 'i': ['i_.png'], 'j': ['j_.png'],
-            'k': ['k_.png', 'k_v2.png'], 'L': ['L.png'], 'l': ['l_.png', 'l_v2.png'],
-            'M': ['M.png', 'Mv2.png'], 'm': ['m_.png'], 'N': ['N.png', 'Nv2.png'],
-            'n': ['n_.png', 'n_v2.png', 'n_v3.png'], 'O': ['O.png'], 'o': ['o_.png', 'o_v2.png'],
-            'P': ['P.png'], 'p': ['p_.png'], 'Q': ['Q.png'], 'R': ['R.png'], 'r': ['r_.png'],
-            'S': ['S.png', 'Sv2.png','Sv3.png', 'Sv4.png'], 's': ['s_.png'], 'T': ['T.png'],
-            't': ['t_.png'], 'U': ['U.png','Uv2.png'], 'u': ['u_.png'], 'v': ['v_.png'],
-            'w': ['w_.png', 'w_v2.png'], 'y': ['y_.png','y_v2.png'], 'Z': ['Z.png'],
-            'z': ['z_.png'], '0': ['0.png'], '2': ['2.png'], '3': ['3.png'], '5': ['5.png'],
-            '7': ['7.png'], '9': ['9.png', '9v2.png']
-        }
-    }
 
     return RoomConfig(
         room_id="swc_poker",
@@ -93,7 +64,6 @@ def get_swc_poker_config() -> RoomConfig:
         template_path=template_path,
         sample_image_path=template_path + "/table_example.png",
         emptySeatTemplate=template_path + "/others/assento_vazio.png",
-        template_mapping=template_mapping,
         dealer_config=DealerConfig(
             detection_method=DetectionMethod.PIXEL_COLOR,
             positions={0: (350, 416), 1: (663, 387), 2: (626, 296), 3: (617, 207),
@@ -127,49 +97,12 @@ def get_swc_poker_config() -> RoomConfig:
 def get_swc_poker_config_v2() -> RoomConfig:
     template_path = "imgs/models/swc/v2"
 
-    template_mapping = {
-         "roomId": {
-            '0': ['0.png'], '1': ['1.png'], '2': ['2.png'], '3': ['3.png'],
-            '4': ['4.png'], '5': ['4.png'], '6': ['6.png'],
-            '7': ['7.png'], '8': ['8.png'], '9': ['9.png'],
-            '.': ['ponto.png'], '': ['nada.png']
-        },
-        "stack": {
-            '0': ['0.png'], '1': ['1.png'], '2': ['2.png'], '3': ['3.png'],
-            '4': ['4.png'], '5': ['5.png'], '6': ['6.png'],
-            '7': ['7.png'], '8': ['8.png'], '9': ['9.png'],
-            '.': ['ponto.png'], '': ['nada.png']
-        },
-        "bet": {str(d): [f"{d}.png"] for d in range(10)} | {'.': ['ponto.png']},
-        "pot": {str(d): [f"{d}.png"] for d in range(10)} | {'.': ['ponto.png']},
-        "hand": {str(d): [f"{d}.png"] for d in range(10)} | {'.': ['ponto.png']},
-        "smallpot": {str(d): [f"{d}.png"] for d in range(10)} | {'.': ['ponto.png']},
-        "names": {
-            'A': ['A.png', 'Av2.png'], 'a': ['a_.png', 'a_v2.png'], 'b': ['b_.png'], 'B': ['B.png', 'Bv2.png'],
-            'C': ['C.png', 'Cv2.png'], 'c': ['c_.png'], 'D': ['D.png', 'Dv2.png'], 'd': ['d_.png', 'd_v2.png'],
-            'E': ['E.png', 'Ev2.png'], 'e': ['e_.png', 'e_v2.png'], 'F': ['F.png'], 'f': ['f_.png'], 'G': ['G.png', 'Gv2.png'],
-            'g': ['g_.png'], 'H': ['H.png'], 'h': ['h_.png', 'h_v2.png'], 'I': ['I.png'], 'i': ['i_.png'], 'j': ['j_.png'],
-            'K': ['K.png','Kv2.png',], 'k': ['k_.png', 'k_v2.png'], 'L': ['L.png'], 'l': ['l_.png', 'l_v2.png'],
-            'M': ['M.png', 'Mv2.png'], 'm': ['m_.png','m_v2.png'], 'N': ['N.png', 'Nv2.png'],
-            'n': ['n_.png', 'n_v2.png', 'n_v3.png'], 'O': ['O.png','Ov2.png'], 'o': ['o_.png', 'o_v2.png'],
-            'P': ['P.png','Pv2.png'], 'p': ['p_.png'], 'Q': ['Q.png'], 'q': ['q_.png'],'R': ['R.png','Rv2.png'], 'r': ['r_.png'],
-            'S': ['S.png', 'Sv2.png','Sv3.png', 'Sv4.png'], 's': ['s_.png'], 'T': ['T.png'],
-            't': ['t_.png'], 'U': ['U.png','Uv2.png'], 'u': ['u_.png'], 'V': ['V.png'], 'v': ['v_.png'],'x': ['x_.png'],
-            'W': ['W.png'], 'w': ['w_.png', 'w_v2.png'], 'y': ['y_.png','y_v2.png'], 'Z': ['Z.png','Zv2.png'],
-            'z': ['z_.png'], '0': ['0.png'], '1': ['1.png'], '2': ['2.png'], '3': ['3.png'], '4': ['4.png'], '5': ['5.png'],'6': ['6.png'],
-            '7': ['7.png'], '8': ['8.png'], '9': ['9.png', '9v2.png'], '.': ['ponto.png'],'_': ['_.png','_v2.png'],'-': ['-.png']
-        },
-          'ranks': {rank: f"{rank}.png" for rank in '23456789JQKA'},
-          'suits': {suit: f"{suit}.png" for suit in 'DHSC'}
-    }
-
     return RoomConfig(
         room_id="swc_poker",
         room_name="SwC Poker",
         template_path=template_path,
         sample_image_path=template_path + "/table_example.png",
         emptySeatTemplate=template_path + "/others/assento_vazio.png",
-        template_mapping=template_mapping,
         dealer_config=DealerConfig(
             detection_method=DetectionMethod.PIXEL_COLOR,
             positions={0: (379, 344), 1: (517, 385), 2: (671, 335), 3: (666, 190),
@@ -216,49 +149,12 @@ def get_swc_poker_config_v2() -> RoomConfig:
 def get_swc_poker_config_v3() -> RoomConfig:
     template_path = "imgs/models/swc/v3"
 
-    template_mapping = {
-         "roomId": {
-            '0': ['0.png'], '1': ['1.png'], '2': ['2.png'], '3': ['3.png'],
-            '4': ['4.png'], '5': ['4.png'], '6': ['6.png'],
-            '7': ['7.png'], '8': ['8.png'], '9': ['9.png'],
-            '.': ['ponto.png'], '': ['nada.png']
-        },
-        "stack": {
-            '0': ['0.png'], '1': ['1.png', '1v2.png'], '2': ['2.png'], '3': ['3.png'],
-            '4': ['4.png'], '5': ['5.png'], '6': ['6.png'],
-            '7': ['7.png'], '8': ['8.png'], '9': ['9.png'],
-            '.': ['ponto.png'], '': ['nada.png']
-        },
-        "bet": {str(d): [f"{d}.png"] for d in range(10)} | {'.': ['ponto.png']},
-        "pot": {str(d): [f"{d}.png"] for d in range(10)} | {'.': ['ponto.png'], '6': ['6v2.png']},
-        "hand": {str(d): [f"{d}.png"] for d in range(10)} | {'.': ['ponto.png']},
-        "smallpot": {str(d): [f"{d}.png"] for d in range(10)} | {'.': ['ponto.png']},
-        "names": {
-            'A': ['A.png'], 'a': ['a_.png','a_v2.png'], 'b': ['b_.png'], 'B': ['B.png', 'Bv2.png','Bv3.png'],
-            'C': ['C.png', 'Cv2.png'], 'c': ['c_.png'], 'D': ['D.png', 'Dv2.png'], 'd': ['d_.png'],
-            'E': ['E.png', 'Ev2.png'], 'e': ['e_.png'], 'F': ['F.png'], 'f': ['f_.png'], 'G': ['G.png', 'Gv2.png'],
-            'g': ['g_.png'], 'H': ['H.png','Hv2.png','Hv3.png'], 'h': ['h_.png'], 'I': ['I.png'], 'i': ['i_.png'], 'j': ['j_.png'],
-            'K': ['K.png','Kv2.png',], 'k': ['k_.png'], 'L': ['L.png'], 'l': ['l_.png'],
-            'M': ['M.png'], 'm': ['m_.png','m_v2.png'], 'N': ['N.png'],
-            'n': ['n_.png'], 'O': ['O.png','Ov2.png'], 'o': ['o_.png'],
-            'P': ['P.png','Pv2.png'], 'p': ['p_.png','p_v2.png'], 'Q': ['Q.png'], 'q': ['q_.png'],'R': ['R.png','Rv2.png','Rv3.png'], 'r': ['r_.png'],
-            'S': ['S.png', 'Sv2.png'], 's': ['s_.png'], 'T': ['T.png'],
-            't': ['t_.png'], 'U': ['U.png'], 'u': ['u_.png'], 'V': ['V.png'], 'v': ['v_.png'],'x': ['x_.png'],
-            'W': ['W.png'], 'w': ['w_.png'], 'y': ['y_.png'], 'Z': ['Z.png','Zv2.png'],
-            'z': ['z_.png'], '0': ['0.png'], '1': ['1.png'], '2': ['2.png'], '3': ['3.png'], '4': ['4.png'], '5': ['5.png'],'6': ['6.png'],
-            '7': ['7.png'], '8': ['8.png'], '9': ['9.png'], '.': ['ponto.png'],'_': ['_.png','_v2.png'],'-': ['-.png']
-        },
-          'ranks': {rank: f"{rank}.png" for rank in '23456789JQKA'},
-          'suits': {suit: f"{suit}.png" for suit in 'DHSC'}
-    }
-
     return RoomConfig(
         room_id="swc_poker",
         room_name="SwC Poker",
         template_path=template_path,
         sample_image_path=template_path + "/table_example.png",
         emptySeatTemplate=template_path + "/others/assento_vazio.png",
-        template_mapping=template_mapping,
         dealer_config=DealerConfig(
             detection_method=DetectionMethod.PIXEL_COLOR,
             positions={0: (380, 392), 1: (0, 0), 2: (672, 366), 3: (667, 221),

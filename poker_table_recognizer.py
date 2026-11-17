@@ -26,6 +26,7 @@ import cv2
 
 from config.room_config import DetectionMethod, RoomConfig
 from config.pixel_detector import detect_pixels_in_window
+from config.templates import discover_templates
 
 from core.models import Player, TableInfo, Card, Position
 from core.blinds import validate_preflop_bets
@@ -48,55 +49,49 @@ class RecognitionCategory(Enum):
 
 
 class CharacterRecognizer:
-    def __init__(self, template_path, template_mapping: Optional[Dict] = None):
-        self.debug_candidates = True
+    def __init__(self, template_path):
         self.base_path = Path(template_path)
-        self.templates: Dict[str, List] = {}
-        self.target_size = (32, 32)
+        self.templates: Dict[str, List] = {}   # templates da categoria ATIVA
         self.threshold = 0.8
-        self.template_mapping = template_mapping
+        # Caches: os templates vivem no disco, mas só precisam ser lidos uma vez.
+        self._template_cache: Dict["RecognitionCategory", Dict[str, List]] = {}
+        self._roi_cache: Dict[tuple, tuple] = {}
 
     def load_templates(self, category):
+        """Ativa os templates da categoria. So le do disco na primeira vez."""
+        if category not in self._template_cache:
+            self._template_cache[category] = self._read_templates(category)
+        self.templates = self._template_cache[category]
+
+    def recognize_cached(self, category, roi_name, roi: np.ndarray, processor):
+        """
+        processor(roi), reaproveitando o resultado quando os pixels do ROI sao
+        identicos aos do frame anterior. O OCR por template e deterministico:
+        mesmos pixels => mesmo texto. Numa mesa parada (a maioria dos frames),
+        quase nenhum ROI muda.
+        """
+        key = (category, roi_name)
+        signature = (roi.shape, roi.tobytes())
+        hit = self._roi_cache.get(key)
+        if hit is not None and hit[0] == signature:
+            return hit[1]
+        result = processor(roi)
+        self._roi_cache[key] = (signature, result)
+        return result
+
+    def _read_templates(self, category) -> Dict[str, List]:
+        """Le a pasta da categoria; o caractere de cada template vem do nome do arquivo."""
         print(f"Carregando templates para categoria: {category.value}\n")
-        self.templates.clear()
         template_dir = self.base_path / category.value
         if not template_dir.exists():
             raise ValueError(f"Diretório de templates não encontrado: {template_dir}")
 
-        template_mapping = (
-            self.template_mapping.get(category.value, {})
-            if isinstance(self.template_mapping, dict)
-            else {}
-        )
-
-        # Verifica se o template_mapping é um dicionário de strings (caminhos simples)
-        if template_mapping and isinstance(next(iter(template_mapping.values())), str):
-            for char, template_file in template_mapping.items():
-                template_path = template_dir / template_file
-                if template_path.exists():
-                    template = self._load_template(template_path)
-                    if template is not None:
-                        self.templates[char] = [template]
-                else:
-                    print(f"Template não encontrado: {template_path}")
-        else:
-            # Código original para lista de templates
-            for char, template_files in template_mapping.items():
-                if not isinstance(template_files, (list, tuple)):
-                    template_files = [template_files]
-
-                template_list = []
-                for template_file in template_files:
-                    template_path = template_dir / template_file
-                    if template_path.exists():
-                        template = self._load_template(template_path)
-                        if template is not None:
-                            template_list.append(template)
-                    else:
-                        print(f"Template não encontrado: {template_path}")
-
-                if template_list:
-                    self.templates[char] = template_list
+        templates: Dict[str, List] = {}
+        for char, paths in discover_templates(template_dir).items():
+            loaded = [t for t in map(self._load_template, paths) if t is not None]
+            if loaded:
+                templates[char] = loaded
+        return templates
 
     def _load_template(self, template_path: Path) -> Optional[np.ndarray]:
         template = cv2.imread(str(template_path), cv2.IMREAD_GRAYSCALE)
@@ -196,11 +191,7 @@ class TableRecognizer:
     def __init__(self, config: RoomConfig):
         
         self.config = config
-        # passa o mapping dict da config (ou None) para o CharacterRecognizer
-        self.char_recognizer = CharacterRecognizer(
-            config.template_path,
-            getattr(config, 'template_mapping', None),
-        )
+        self.char_recognizer = CharacterRecognizer(config.template_path)
         self.player_detector = PlayerDetector(config)
 
         self.dealer_positions = config.dealer_config.positions
@@ -337,11 +328,13 @@ class TableRecognizer:
 
             self.char_recognizer.load_templates(category)
 
+            recognize = self.char_recognizer.recognize_cached
+
             # Para ROIs de jogador (com posição no nome)
             if attr_name:
                 for name, (x, y, w, h) in roi_dict.items():
                     roi = image[y:y+h, x:x+w]
-                    result = processor(roi)
+                    result = recognize(category, name, roi, processor)
                     position = int(name.split('_')[1])
                     if position < len(players):
                         setattr(players[position], attr_name, result)
@@ -349,9 +342,9 @@ class TableRecognizer:
             # Para ROIs únicos (pot/smallpot)
             else:
                 # Processa apenas a primeira ROI (assumindo que há apenas uma)
-                x, y, w, h = next(iter(roi_dict.values()))
+                name, (x, y, w, h) = next(iter(roi_dict.items()))
                 roi = image[y:y+h, x:x+w]
-                return processor(roi)
+                return recognize(category, name, roi, processor)
 
         # Preenche stack / current_bet / name nos players
         process_rois(roi_config.stacks, RecognitionCategory.STACK,
