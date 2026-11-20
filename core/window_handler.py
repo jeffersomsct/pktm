@@ -14,7 +14,7 @@ import win32process
 import numpy as np
 import cv2
 
-from images.capture import capture, get_window_rect
+from core.capture import capture, get_window_rect
 
 
 def get_all_child_windows(parent_handle):

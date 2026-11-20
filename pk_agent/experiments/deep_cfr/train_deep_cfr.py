@@ -1,12 +1,13 @@
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from pk_agent.deep_cfr.deep_cfr import DeepCFR
+from pk_agent.experiments.deep_cfr.deep_cfr import DeepCFR
 from pk_agent.dqn.train.slumbot_env import SlumbotEnv
 import os
 import time
+from paths import DATA_DIR
 
-def train_deep_cfr(num_iterations=100, save_path="models/deep_cfr"):
+def train_deep_cfr(num_iterations=100, save_path=DATA_DIR / "models" / "deep_cfr"):
     """
     Treina um agente Deep CFR para poker.
     """
@@ -147,7 +148,7 @@ def train_deep_cfr(num_iterations=100, save_path="models/deep_cfr"):
     
     plt.tight_layout()
     plt.savefig(f"{save_path}/training_results.png")
-    plt.show()
+    plt.close()                       # sem plt.show(): ele prendia o processo ate fechar a janela
     
     print(f"\nTreinamento concluído!")
     

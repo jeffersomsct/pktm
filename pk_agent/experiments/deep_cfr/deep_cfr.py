@@ -1,10 +1,23 @@
+"""
+ESBOCO CONCEITUAL de Deep CFR. Nao roda contra o Slumbot.
+
+O Deep CFR e um algoritmo de self-play: em cada decisao do jogador que treina ele precisa
+calcular o valor de TODAS as acoes, ramificando a mao (clone do estado, volta atras). O Slumbot e um
+servidor remoto de uma mao so: nao da para clonar nem voltar atras, entao o clone() do
+PokerEnvAdapter cria um ambiente novo e sem estado, e os valores contrafactuais saem sem sentido.
+Para treinar CFR de verdade use um simulador local (por exemplo OpenSpiel ou RLCard) e deixe o Slumbot
+so para AVALIAR o agente. Ver README.md desta pasta.
+"""
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 import random
-from pk_agent.deep_cfr.models import ValueNetwork, AdvantageNetwork
-from pk_agent.deep_cfr.memory import MemoryBuffer
+
+from paths import DATA_DIR
+from pk_agent.experiments.deep_cfr.models import ValueNetwork, AdvantageNetwork
+from pk_agent.experiments.deep_cfr.memory import MemoryBuffer
+from pk_agent.experiments.deep_cfr.regret import masked_softmax, regret_matching
 from pk_agent.dqn.train.state_representation import PokerStateRepresentation
 
 class DeepCFR:
@@ -63,22 +76,10 @@ class DeepCFR:
         
         return masked_advantages
     
-    def _compute_strategy(self, advantages):
-        """
-        Converte vantagens em uma estratégia usando regret-matching.
-        """
-        # Regret-matching: converte vantagens positivas em probabilidades
-        advantages_pos = np.maximum(advantages, 0)
-        sum_advantages = np.sum(advantages_pos)
-        
-        if sum_advantages > 0:
-            strategy = advantages_pos / sum_advantages
-        else:
-            # Estratégia uniforme se não houver vantagens positivas
-            strategy = np.ones_like(advantages) / len(advantages)
-        
-        return strategy
-    
+    def _compute_strategy(self, advantages, legal_actions):
+        """Regret-matching sobre as acoes legais (0 nas ilegais, soma 1)."""
+        return regret_matching(advantages, legal_actions)
+
     def _update_advantage_network(self, player_id, iteration):
         """
         Atualiza a rede de vantagem para um jogador.
@@ -154,14 +155,8 @@ class DeepCFR:
         with torch.no_grad():
             logits = self.strategy_network(state_tensor).squeeze(0).cpu().numpy()
         
-        # Aplica softmax e filtra apenas ações legais
-        masked_logits = np.ones(self.action_dim) * float('-inf')
-        masked_logits[legal_actions] = logits[legal_actions]
-        
-        # Converte para probabilidades
-        probabilities = np.exp(masked_logits) / np.sum(np.exp(masked_logits))
-        
-        return probabilities
+        # Converte para probabilidades (0 nas ilegais, soma 1)
+        return masked_softmax(logits, legal_actions)
     
     def select_action(self, info_state, legal_actions):
         """
@@ -204,20 +199,17 @@ class DeepCFR:
             if current_player == player_id:
                 # Calcula vantagens e estratégia
                 advantages = self._compute_advantages(player_id, info_state, legal_actions, iteration)
-                strategy = self._compute_strategy(advantages)
+                strategy = self._compute_strategy(advantages, legal_actions)
                 
                 # Adiciona experiência de estratégia
                 self.memory.add_strategy_experience(info_state, strategy, iteration)
                 
                 # Seleciona ação com base na estratégia
-                action_probs = strategy[legal_actions]
-                action_idx = np.random.choice(len(legal_actions), p=action_probs)
-                action = legal_actions[action_idx]
+                action = int(np.random.choice(len(strategy), p=strategy))
             else:
                 # Para outros jogadores, usa a política atual
                 action_probs = self.get_action_probabilities(info_state, legal_actions)
-                action_idx = np.random.choice(len(legal_actions), p=action_probs)
-                action = legal_actions[action_idx]
+                action = int(np.random.choice(len(action_probs), p=action_probs))
             
             # Executa a ação
             next_state, reward, done, _ = env.step(action)
@@ -275,7 +267,7 @@ class DeepCFR:
             
             # Salva o modelo periodicamente
             if iteration % 10 == 0:
-                self.save_model(f"models/deep_cfr_iter_{iteration}.pt")
+                self.save_model(str(DATA_DIR / "models" / f"deep_cfr_iter_{iteration}.pt"))
     
     def save_model(self, path):
         """

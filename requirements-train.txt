@@ -1,4 +1,7 @@
 # Dependencias do treino (pk_agent). Instale o torch a parte, conforme sua GPU:
 #   https://pytorch.org/get-started/locally/
+requests
+gymnasium
+matplotlib
 tqdm
-PySide6   # so para pk_agent/trainning/replay_system/replay2.py
+PySide6   # so para pk_agent/training/replay_system/replay2.py

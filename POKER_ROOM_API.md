@@ -23,10 +23,10 @@ room.update_table_state(snapshot=None)  # None usa imagem de exemplo
 | Propriedade | Tipo | Descrição |
 |------------|------|-----------|
 | `room.hand_id` | `str` | ID da mão atual |
-| `room.pot` | `str` | Valor do pot principal |
-| `room.small_pot` | `str` | Valor do pot secundário |
+| `room.pot` | `float` | Valor do pot principal |
+| `room.small_pot` | `float` | Valor do pot secundário |
 | `room.dealer_position` | `int` | Posição do dealer (-1 se não detectado) |
-| `room.community_cards` | `List[tuple]` | Cartas comunitárias [(rank, suit), ...] |
+| `room.community_cards` | `List[Card]` | Cartas do board; `str(card)` dá `'5H'` |
 
 ### Jogadores
 
@@ -34,7 +34,7 @@ room.update_table_state(snapshot=None)  # None usa imagem de exemplo
 |------------|------|-----------|
 | `room.players` | `List[Player]` | Todos os jogadores na mesa |
 | `room.active_players` | `List[Player]` | Jogadores ativos (presentes e com fichas) |
-| `room.bb_positions` | `List[int]` | Posições dos big blinds |
+| `room.bb_positions` | `List[int]` | Assento do big blind (`[]` se o dealer não foi detectado) |
 
 ### Configuração
 
@@ -45,12 +45,13 @@ room.update_table_state(snapshot=None)  # None usa imagem de exemplo
 
 ## Métodos Principais
 
-### `update_table_state(snapshot=None)`
+### `update_table_state(snapshot=None, title=None)`
 
 Atualiza o estado da mesa analisando um snapshot.
 
 **Parâmetros:**
-- `snapshot` (Optional[np.ndarray]): Imagem da mesa. Se None, usa imagem de exemplo.
+- `snapshot` (Optional[np.ndarray]): Imagem BGR da mesa, **na geometria da config** (SwC v3: 827x601, com barra de título; com outro tamanho o reconhecedor avisa). Se None, usa imagem de exemplo.
+- `title` (Optional[str]): título da janela. É dele que saem as blinds (`sb_amount`, `bb_amount`, `ante`), por exemplo `"... Level 40/80 ante 16; Next Level ..."`. Sem título, ficam em 0.
 
 **Retorna:**
 - `TableInfo`: Informações completas da mesa
@@ -60,10 +61,10 @@ Atualiza o estado da mesa analisando um snapshot.
 # Usar imagem de exemplo
 room.update_table_state()
 
-# Usar captura ao vivo
-from core.window_handler import detect_window
-snapshot = detect_window("SwC Poker - Logged in as jeffpk")
-room.update_table_state(snapshot)
+# Usar captura ao vivo (Windows): uma janela por mesa, com imagem e título
+from core.window_handler import detect_windows
+for table in detect_windows("SwC Poker - Logged in as jeffpk"):
+    room.update_table_state(table["image"], title=table["title"])
 ```
 
 ### `get_player_by_position(position)`
@@ -190,8 +191,7 @@ class MyStrategy:
     
     def get_raise_amount(self) -> float:
         # Calcular valor do raise
-        pot = float(self.room.pot.replace(',', '.'))
-        return pot * 0.5
+        return self.room.pot * 0.5   # room.pot já é float
 
 # Uso
 room = PokerRoom("SwC Poker - Logged in as jeffpk")
@@ -205,18 +205,25 @@ if strategy.should_raise():
 
 ## Salas Suportadas
 
-- **SwC Poker**: `"SwC Poker - Logged in as jeffpk"`
-- **Bodog Poker**: `"Bodog.com - Poker Lobby"`
-- **CoinPoker**: `"CoinPoker"`
+- **SwC Poker** (layout v3): `"SwC Poker - Logged in as jeffpk"`
+
+Qualquer outra sala levanta `ValueError`. (Antes caía em silêncio na config da SwC e lia lixo; Bodog
+e CoinPoker constavam aqui mas não tinham templates e a config da Bodog nem era criada.) Para
+acrescentar uma sala: uma função em `config/room_config.py` e uma entrada em `SUPPORTED_ROOMS`
+(`rooms/poker_room.py`).
 
 ## Notas Importantes
 
 1. **Sempre chame `update_table_state()`** antes de acessar as propriedades da mesa
 2. **Verifique se os valores não são None** antes de usar
 3. **Use `active_players`** em vez de `players` para filtrar apenas jogadores ativos
-4. **Cartas comunitárias** estão no formato `[(rank, suit), ...]` onde:
-   - `rank`: '2'-'9', 'T', 'J', 'Q', 'K', 'A'
+4. **Cartas comunitárias** são `Card(rank, suit)`:
+   - `rank`: '2'-'9', 'T' (o 10), 'J', 'Q', 'K', 'A'
    - `suit`: 'S' (Spades), 'H' (Hearts), 'D' (Diamonds), 'C' (Clubs)
+5. **Assentos vazios**: `is_present` é falso e stack, aposta e nome ficam vazios. Presença = há amarelo no
+   ROI do stack (todo jogador sentado mostra o stack ou um rótulo, como ALL IN, em amarelo).
+6. **Ordem de jogo**: os assentos são numerados no sentido anti-horário da tela (0 = herói) e a ação
+   anda em índices decrescentes (`seat_step = -1` na config). SB e BB saem disso e do dealer.
 
 ## Debugging
 
@@ -229,3 +236,14 @@ room.update_table_state()
 
 # Imagem será salva em: debug_table_recognition.png
 ```
+
+O modo debug vem **desligado** por padrão (ligado, grava um PNG a cada frame).
+
+## Calibração (SwC v3)
+
+Os ROIs são pixel-exatos para uma janela de 827x601 com barra de título. Em `config/room_config.py`
+cada grupo de números diz se foi **medido** numa imagem real ou **derivado** (estimado a partir de
+vizinhos). Os derivados (apostas dos assentos 1, 7 e 8 e o dealer do assento 1) ainda não foram
+conferidos com uma imagem real: ligue o `debug_mode` e confira no `debug_table_recognition.png`.
+
+Testes: `python tests/run_all.py`.

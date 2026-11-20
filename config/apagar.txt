@@ -1,0 +1,8 @@
+
+
+config\room_config.py: get_swc_poker_config_v3() 
+                                ⇓
+rooms\poker_room.py    class PokerRoom: def _load_room_config(self, room_name: str) -> RoomConfig:
+
+
+player_detection_config

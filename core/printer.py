@@ -1,12 +1,6 @@
 """
 core/printer.py
 Impressao formatada do estado da mesa.
-
-Migracao da versao anterior:
-  - p.position -> p.seat
-  - community_cards: List[tuple] -> List[Card] (usar card.rank / card.suit)
-  - pot / small_pot: str -> float (formatar com :.2f)
-  - Novas colunas: Is Hero, All-In (no lugar de Pending BB duplicado)
 """
 from colorama import Fore, Style, init
 
@@ -15,14 +9,12 @@ init(autoreset=False, strip=False, convert=True)
 
 def _fmt_chip(v) -> str:
     """
-    Formata um valor em chips (mBTC/SwC) com ate 3 casas decimais,
-    sem zeros a direita. Exemplos:
-        3.033   -> '3.033'
-        6.153   -> '6.153'
-        1262.0  -> '1262'
-        0.1     -> '0.1'
-        0.0     -> '0'
-    SwC usa mBTC com 3 casas; .2f cortava o 3o digito que o OCR captura.
+    Formata um valor da mesa sem zeros a direita.
+        fichas de torneio:  1262.0 -> '1262'   (inteiras: "1,262" na tela)
+        cash:               0.04 -> '0.04'     (a SwC mostra no maximo 2 casas)
+        vazio:              0.0 -> '0'
+    (Isto ja disse "mBTC com 3 casas, 3.033 -> '3.033'": era o OCR lendo a virgula de milhar de
+    "3,033" como ponto. Isso foi corrigido na leitura, em poker_table_recognizer.)
     """
     if v is None or v == "":
         return "0"
@@ -120,35 +112,3 @@ def print_table_status(room):
     print(f"║ {Fore.WHITE}Dealer: Seat {Fore.GREEN}{dealer_pos}{Fore.WHITE} {'🃏'*3}  |  Pote: {Fore.GREEN}{pot_str}{Fore.WHITE} {'💰'*1}    |    Small Pot: {Fore.YELLOW}{small_pot_str}{Fore.YELLOW}                       ║")
     print(f"║ {Fore.WHITE}Cartas na Mesa: {cards_str}{' '*max(0, 50-len(cards_str))}{Fore.YELLOW}                                                               ║")
     print(f"╚═══════════════════════════════════════════════════════════════════════════════════════════╝{Style.RESET_ALL}")
-
-
-def print_hand_summary(hand):
-    """
-    Novo: imprime resumo do HandRecord (sequencia de acoes por street).
-    """
-    if not hand:
-        print("Sem HandRecord para exibir.")
-        return
-
-    print(f"\n=== HAND {hand.hand_id} (table: {hand.table_id}) ===")
-    print(f"  Blinds: SB={hand.sb_amount} BB={hand.bb_amount} Ante={hand.ante}")
-    print(f"  Dealer seat: {hand.dealer_seat}")
-    if hand.hero_seat is not None:
-        hero_cards_str = " ".join(str(c) for c in hand.hero_cards) or "(nao capturadas)"
-        print(f"  Hero: seat {hand.hero_seat}  cards: {hero_cards_str}")
-
-    from core.models import Street
-    for street in [Street.PREFLOP, Street.FLOP, Street.TURN, Street.RIVER]:
-        sr = hand.streets.get(street)
-        if not sr:
-            continue
-        board_str = " ".join(str(c) for c in sr.board_before) or "(vazio)"
-        print(f"  [{street.value}] board_before={board_str}  "
-              f"pot {_fmt_chip(sr.pot_before)} -> {_fmt_chip(sr.pot_after)}  "
-              f"acoes: {len(sr.actions)}")
-        for a in sr.actions:
-            amt = f" {_fmt_chip(a.amount)}" if a.amount > 0 else ""
-            print(f"      #{a.order:02d} {a.player_name:<14} {a.type.value}{amt}")
-
-    if hand.winners:
-        print(f"  Vencedores: {', '.join(hand.winners)}")

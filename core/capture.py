@@ -1,14 +1,8 @@
 """
-images/capture.py
+core/capture.py
 Captura de janelas de poker -- SEM persistencia.
 
-Quem chama decide se/onde salvar, passando table_id/hand_id para
-images.snapshot_saver.SnapshotSaver.
-
-Migracao da versao anterior:
-  - Funcao snapshot(window) REMOVIDA (fazia captura + save junto).
-  - Nova funcao capture(hwnd) -> PIL.Image | None (so captura).
-  - Nova funcao get_window_rect(hwnd) -> (x, y, w, h) pra uso no matching.
+Quem chama decide o que fazer com a imagem (ver storage/capture_store.py).
 """
 import ctypes
 from ctypes import windll
@@ -161,7 +155,7 @@ def capture(hwnd):
       2. getSnapshot            (fallback classico)
       3. capture_protected_window (ultimo recurso)
 
-    NAO salva em disco -- use SnapshotSaver para isso.
+    NAO salva em disco -- use storage.capture_store.CaptureStore para isso.
     """
     img = capture_window_memory(hwnd)
     if img is None:

@@ -1,16 +1,14 @@
 """
 core/debug_image.py
 Visualizacao de debug: desenha ROIs, cartas, posicoes e labels na imagem.
-
-Migracao da versao anterior:
-  - player.position -> player.seat
-  - community_cards: List[tuple] -> List[Card] (usar card.rank / card.suit)
 """
 import numpy as np
 import cv2
 from typing import List
 
 from core.models import Card
+from core.imageio import write_image
+from paths import DATA_DIR
 
 
 _SUIT_EMOJIS = {
@@ -244,5 +242,7 @@ def create_debug_image(
         cv2.putText(debug_image, "suit", (x, y - 5),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
 
-    print("Debug Mode ON: Image save: debug_table_recognition.png")
-    cv2.imwrite("debug_table_recognition.png", debug_image)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    destination = DATA_DIR / "debug_table_recognition.png"
+    write_image(destination, debug_image)
+    print(f"Debug Mode ON: imagem salva em {destination}")

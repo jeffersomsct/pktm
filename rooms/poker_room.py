@@ -2,28 +2,22 @@
 rooms/poker_room.py
 Interface principal para uma mesa de poker.
 
-Migracao da versao anterior:
-  - NAO duplica campos de TableInfo internamente; guarda apenas
-    _last_table_info e expoe via properties.
-  - pot/small_pot/pots retornam float/List[Pot] (antes str/str).
-  - community_cards retorna List[Card] (antes List[tuple]).
-  - Novas properties: hero, tournament, sb_amount, bb_amount, ante, pots.
-  - get_player_by_position() mantido por compat, mas o nome preferido eh
-    get_player_by_seat().
+Nao duplica campos de TableInfo: guarda apenas _last_table_info e expoe via properties.
+get_player_by_position() fica por compat; o nome preferido e get_player_by_seat().
 """
 from typing import List, Optional
 import numpy as np
 
 from core.models import (
-    TableInfo, Player, Position, Pot, HeroInfo, TournamentInfo, Card,
+    TableInfo, Player, Position, HeroInfo, Card,
 )
-from config.room_config import (
-    RoomConfig,
-    get_CoinPoker_config,
-    get_bodog_poker_config,
-    get_swc_poker_config_v3,get_swc_poker_config_v2,
-)
+from config.room_config import RoomConfig, get_swc_poker_config_v3
 from poker_table_recognizer import TableAnalyzer
+
+# Salas suportadas: trecho do nome da janela -> funcao que monta a config.
+SUPPORTED_ROOMS = {
+    "SwC Poker": get_swc_poker_config_v3,
+}
 
 
 class PokerRoom:
@@ -40,27 +34,27 @@ class PokerRoom:
         self._last_table_info: Optional[TableInfo] = None
 
     def _load_room_config(self, room_name: str) -> RoomConfig:
-        if "SwC Poker" in room_name:
-            return get_swc_poker_config_v3()
-        elif "Bodog" in room_name:
-            return get_bodog_poker_config()
-        elif "CoinPoker" in room_name:
-            return get_CoinPoker_config()
-        else:
-            print(f"Aviso: sala nao reconhecida: {room_name}. Usando config SwC.")
-            return get_swc_poker_config_v3()
+        for key, make_config in SUPPORTED_ROOMS.items():
+            if key in room_name:
+                return make_config()
+        raise ValueError(
+            f"Sala nao suportada: {room_name!r}. Suportadas: {', '.join(SUPPORTED_ROOMS)}. "
+            "(Antes caia em silencio na config da SwC e lia lixo.)"
+        )
 
-    def update_table_state(self, snapshot: Optional[np.ndarray] = None) -> TableInfo:
+    def update_table_state(self, snapshot: Optional[np.ndarray] = None,
+                           title: Optional[str] = None) -> TableInfo:
         """
         Atualiza o estado da mesa analisando um snapshot.
 
         Args:
             snapshot: imagem BGR. Se None, usa sample image da config.
+            title: titulo da janela (as blinds saem dele: 'Level 40/80 ante 16').
 
         Returns:
             TableInfo com tudo extraido desta captura.
         """
-        self._last_table_info = self.analyzer.analyze_table(snapshot)
+        self._last_table_info = self.analyzer.analyze_table(snapshot, title=title)
         return self._last_table_info
 
     # ---- Acesso ao estado bruto ----
@@ -101,11 +95,6 @@ class PokerRoom:
         return self._last_table_info.small_pot if self._last_table_info else 0.0
 
     @property
-    def pots(self) -> List[Pot]:
-        """Todos os pots (main + side). Substitui small_pot para multi-all-in."""
-        return self._last_table_info.pots if self._last_table_info else []
-
-    @property
     def hand_id(self) -> str:
         return self._last_table_info.hand if self._last_table_info else ""
 
@@ -116,10 +105,6 @@ class PokerRoom:
     @property
     def hero(self) -> Optional[HeroInfo]:
         return self._last_table_info.hero if self._last_table_info else None
-
-    @property
-    def tournament(self) -> Optional[TournamentInfo]:
-        return self._last_table_info.tournament if self._last_table_info else None
 
     @property
     def sb_amount(self) -> float:

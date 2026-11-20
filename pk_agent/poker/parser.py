@@ -116,11 +116,11 @@ def parse_action_line(line):
         "amount": amount
     }
 
-# Debug
+# Debug: python -m pk_agent.poker.parser   (funciona de qualquer pasta)
 if __name__ == "__main__":
-    path = "pk_agent/data/phh/abs NLH handhq_8-OBFUSCATED.phhs"
-    parsed = parse_hand_history(path)
+    base = Path(__file__).resolve().parents[1]                 # .../pk_agent
+    parsed = parse_hand_history(str(base / "data" / "phh" / "abs NLH handhq_8-OBFUSCATED.phhs"))
     print(parsed)
-    Path("pk_agent/parsed").mkdir(exist_ok=True)
-    with open("pk_agent/parsed/hands.json", "w") as f:
+    (base / "parsed").mkdir(exist_ok=True)
+    with open(base / "parsed" / "hands.json", "w") as f:
         json.dump(parsed, f, indent=2)

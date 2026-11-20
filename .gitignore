@@ -28,6 +28,6 @@ training_data_episode_*.npy
 
 # Saidas de execucao (nao sao codigo)
 pktm_sessions.db
-*.mp4
 training_progress_episode_*.png
 /models/
+/data/

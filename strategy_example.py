@@ -35,12 +35,8 @@ class PokerStrategy:
     
     def get_raise_amount(self) -> float:
         """Calcula o valor do raise."""
-        # Exemplo: raise 2x o pot
-        try:
-            pot_value = float(self.room.pot.replace(',', '.'))
-            return pot_value * 2
-        except:
-            return 0.0
+        # Exemplo: raise 2x o pot (room.pot ja e float)
+        return self.room.pot * 2
     
     def analyze_opponents(self) -> List[Player]:
         """Analisa os oponentes ativos."""
@@ -53,13 +49,9 @@ class PokerStrategy:
     
     def calculate_pot_odds(self) -> float:
         """Calcula as pot odds."""
-        try:
-            pot = float(self.room.pot.replace(',', '.'))
-            # Aqui você adicionaria a lógica para calcular o valor da aposta atual
-            # Por enquanto, retorna apenas o valor do pot
-            return pot
-        except:
-            return 0.0
+        # Aqui você adicionaria a lógica para calcular o valor da aposta atual
+        # Por enquanto, retorna apenas o valor do pot (room.pot ja e float)
+        return self.room.pot
     
     def get_position_advantage(self) -> str:
         """Determina a vantagem posicional."""

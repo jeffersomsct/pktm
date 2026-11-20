@@ -24,3 +24,8 @@ RAISE_SIZES_BB = {
 
 def get_action_dim():
     return len(ACTION_LIST)
+
+# Jogo do Slumbot (heads-up, 200 BB), em fichas.
+SMALL_BLIND = 50
+BIG_BLIND = 100
+STACK_SIZE = 20000

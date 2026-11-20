@@ -1,21 +1,23 @@
-import requests
-import numpy as np
-import gymnasium as gym
-from gymnasium import spaces
 import re
 
-host = 'https://slumbot.com'
+import gymnasium as gym
+import numpy as np
+import requests
+from gymnasium import spaces
 
-# Constantes importantes do jogo
-NUM_STREETS = 4
-SMALL_BLIND = 50
-BIG_BLIND = 100
-STACK_SIZE = 20000
+from pk_agent.common.constants import (
+    ACTION_STRINGS, ALL_IN, BET_2BB, BET_3BB, BET_5BB, BET_10BB, BIG_BLIND, CALL, FOLD,
+    RAISE_SIZES_BB, STACK_SIZE,
+)
+from pk_agent.slumbot.client import SlumbotClient
+
 
 class SlumbotEnv(gym.Env):
-    def __init__(self, username=None, password=None):
+    def __init__(self, username=None, password=None, client=None):
         super(SlumbotEnv, self).__init__()
-        self.token = self.login(username, password) if username and password else None
+        self.client = client or SlumbotClient()          # um unico cliente HTTP (Session + timeout)
+        if username and password:
+            self.client.login(username, password)
         self.last_response = None
         self.stack_size = STACK_SIZE
 
@@ -25,48 +27,17 @@ class SlumbotEnv(gym.Env):
         self.action_space = spaces.Discrete(self.num_actions)
         self.observation_space = spaces.Box(low=0, high=1, shape=(138,), dtype=np.float32)
 
-    def login(self, username, password):
-        data = {"username": username, "password": password}
-        response = requests.post(f'{host}/api/login', json=data)
-        success = getattr(response, 'status_code') == 200
-        if not success:
-            print('Status code: %s' % repr(response.status_code))
-            try:
-                print('Error response: %s' % repr(response.json()))
-            except ValueError:
-                pass
-            raise Exception("Login failed")
-
-        try:
-            r = response.json()
-        except ValueError:
-            raise Exception('Could not get JSON from response')
-
-        if 'error_msg' in r:
-            raise Exception(f'Error: {r["error_msg"]}')
-            
-        token = r.get('token')
-        if not token:
-            raise Exception('Did not get token in response to /api/login')
-        return token
+    @property
+    def token(self):
+        return self.client.token
 
     def new_hand(self):
-        data = {'token': self.token} if self.token else {}
-        response = requests.post(f'{host}/api/new_hand', json=data)
-        response.raise_for_status()
-        r = response.json()
-        self.token = r.get('token', self.token)
-        self.last_response = r
-        return r
+        self.last_response = self.client.new_hand()
+        return self.last_response
 
     def _act(self, incr):
-        data = {'token': self.token, 'incr': incr}
-        response = requests.post(f'{host}/api/act', json=data)
-        response.raise_for_status()
-        r = response.json()
-        self.token = r.get('token', self.token)
-        self.last_response = r
-        return r
+        self.last_response = self.client.act(incr)
+        return self.last_response
 
     def _convert_state(self, response):
         """
@@ -164,10 +135,12 @@ class SlumbotEnv(gym.Env):
         return min(next_raise, self.stack_size)
 
     def _get_current_action(self):
-        current_action = self.last_response.get('action', '') if self.last_response else ''
-        if self.last_response.get('error_msg'):
-            current_action = self.last_response.get('old_action', '') if self.last_response else ''
-        return current_action
+        response = self.last_response
+        if not response:
+            return ''
+        if response.get('error_msg'):
+            return response.get('old_action', '')
+        return response.get('action', '')
         
     def _calculate_remaining_stack(self, current_action):
         """
@@ -194,8 +167,6 @@ class SlumbotEnv(gym.Env):
         return max(remaining_stack, 0)  # Garante que não fique negativo
 
     def _convert_action(self, action_idx):
-        from pk_agent.common.constants import FOLD, CALL, BET_2BB, BET_3BB, BET_5BB, BET_10BB, ALL_IN, ACTION_STRINGS, RAISE_SIZES_BB
-
         current_action = self._get_current_action()
         # Calcula o stack restante com base nas ações anteriores
         remaining_stack = self._calculate_remaining_stack(current_action)
@@ -255,8 +226,6 @@ class SlumbotEnv(gym.Env):
         """
         Retorna uma lista de índices de ações legais no estado atual.
         """
-        from pk_agent.common.constants import FOLD, CALL, BET_2BB, BET_3BB, BET_5BB, BET_10BB, ALL_IN
-
         current_action = self._get_current_action()
         # Calcula o stack restante com base nas ações anteriores
         remaining_stack = self._calculate_remaining_stack(current_action)
@@ -333,7 +302,6 @@ class SlumbotEnv(gym.Env):
                 reward = 0
                 done = True
                 print(result)
-                incr = self._convert_action(action_idx)            
             else:
                 reward = 0
                 done = False
@@ -357,10 +325,6 @@ class SlumbotEnv(gym.Env):
         """
         Retorna uma descrição legível da ação baseada no índice.
         """
-        from pk_agent.common.constants import (
-            FOLD, CALL, BET_2BB, BET_3BB, BET_5BB, BET_10BB, ALL_IN
-        )
-        
         descriptions = {
             FOLD: "Fold",
             CALL: "Call/Check",
